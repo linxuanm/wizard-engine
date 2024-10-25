@@ -154,20 +154,29 @@ component X86_64Runtime {
 		X86_64Stack.!(curStack).moveToStack(stack, n_vals);
 	}
 	def runtime_handle_suspend(instance: Instance, tag_index: int) -> Throwable {
-		var stack = curStack;
+		var stack = curStack.setRsp(CiRuntime.callerSp());
 		var tag = instance.tags[tag_index];
 
 		var top = stack;
 		var prev = top;
-		var curr = prev.parent;
-		while (curr != null) {
-			var parent = X86_64Stack.!(curr);
+		while (prev.parent != null) {
+			var parent = X86_64Stack.!(prev.parent);
 			var accessor = TargetFrame(parent.rsp).getFrameAccessor();
-			Trace.OUT.put1("TEST %d", accessor.pc()).ln();
-			break;
+			var lookup_pc = accessor.pc();
+			var func = accessor.func().decl;
+			var handler = func.findResumeHandler(instance, tag, lookup_pc);
+			// if (handler.handler_pc >= 0) {
+				
+			// 	return null;
+			// }
+
+			prev = parent;
 		}
 
-		return null;
+		// var foo = 1 / 0;
+
+		// Not handled
+		return stack.trap(TrapReason.INVALID_SUSPEND);
 	}
 
 	//=====================================================================
