@@ -163,8 +163,7 @@ component X86_64Runtime {
 		while (curr != null) {
 			var parent = X86_64Stack.!(curr);
 			var accessor = TargetFrame(parent.rsp).getFrameAccessor();
-			var func = accessor.func().decl;
-			Trace.OUT.put1("TEST %p", func.render(instance.module.names, _)).ln();
+			Trace.OUT.put1("TEST %d", accessor.pc()).ln();
 			break;
 		}
 

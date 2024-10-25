@@ -16,8 +16,6 @@ class X86_64Stack extends WasmStack {
 	// [%parent.rsp]. In case of linking two stacks (due to one resuming the
 	// other, assert that this is {null} on the child stack and manually set it).
 	var parent_rsp_ptr: Pointer;
-	// TODO[ss]: use frame accessor
-	var curr_resume_pc: int = -1;
 
 	var curr_resume_handler: Pointer; // pointer to sidetable entry for resume
 	private var params_arity = -1;
