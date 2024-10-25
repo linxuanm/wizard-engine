@@ -1616,14 +1616,13 @@ class SidetableBuilder {
 	// Emit a sidetable entry for a resume handler.
 	def refH(target: ControlEntry, tag: TagDecl, val_stack_top: int) {
 		var stp = sidetable.length;
-		var valcount = labelArgs(target).length;
-		var popcount = val_stack_top - valcount - target.val_stack_top;
 		if (Trace.validation) {
-			OUT.put2("    refH(@+pc tag=%d vsp=%d", if(tag != null, tag.tag_index, -1), target.val_stack_top);
+			OUT.put2("    refH(@+pc tag=%d vsp=%d)", if(tag != null, tag.tag_index, -1), target.val_stack_top);
 			OUT.ln();
 		}
-		var ti = if(tag != null, tag.tag_index, -1);
-		Sidetables.putSuspendHandlerEntry(sidetable, valcount, popcount, target.first_ref, ti);
+		var valcount = labelArgs(target).length;
+		var popcount = val_stack_top - valcount - target.val_stack_top;
+		Sidetables.putSuspendHandlerEntry(sidetable, valcount, popcount, target.first_ref);
 		target.first_ref = stp;
 	}
 	// Emit a sidetable entry for a catch entry.

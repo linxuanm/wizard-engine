@@ -2208,9 +2208,9 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			asm.movd_r_m(n_args, r_stp.plus(Sidetable_ResumeEntry.n_binds.offset));
 
 			// set curr_resume_handler
-			var r_currStack = r_tmp4;
-			asm.movq_r_m(r_currStack, m_curStack);
-			asm.q.movq_m_r(r_currStack.plus(offsets.X86_64Stack_curr_resume_handler), r_stp);
+			// var r_currStack = r_tmp4;
+			// asm.movq_r_m(r_currStack, m_curStack);
+			// asm.q.movq_m_r(r_currStack.plus(offsets.X86_64Stack_curr_resume_handler), r_stp);
 
 			// extract top stack from continuation
 			var stack_ref = r_tmp4;
@@ -2238,7 +2238,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			asm.q.sub_r_r(r_vsp, vsp_offset);
 
 			var r_cont_ref = r_tmp0;
-			r_currStack = r_tmp1;
+			var r_currStack = r_tmp1;
 
 			// mov %stack, [cur_stack]    ; reload stack object from (thread-local) curStack
 			asm.movq_r_m(r_currStack, m_curStack);
@@ -2307,7 +2307,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			// label: start
 			asm.bind(lookup_start);
 			// mov %handlers, [%parent.curr_resume_handler]
-			asm.movq_r_m(handlers, parent.plus(offsets.X86_64Stack_curr_resume_handler));
+			// asm.movq_r_m(handlers, parent.plus(offsets.X86_64Stack_curr_resume_handler));
 
 			saveCallerIVars();
 			callRuntime(refRuntimeCall(RT.runtime_handle_suspend), [r_instance, tag_index], true);

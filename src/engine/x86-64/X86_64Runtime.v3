@@ -157,18 +157,20 @@ component X86_64Runtime {
 		var stack = curStack.setRsp(CiRuntime.callerSp());
 		var tag = instance.tags[tag_index];
 
-		var top = stack;
-		var prev = top;
+		var prev = stack;
 		while (prev.parent != null) {
 			var parent = X86_64Stack.!(prev.parent);
 			var accessor = TargetFrame(parent.rsp).getFrameAccessor();
 			var lookup_pc = accessor.pc();
 			var func = accessor.func().decl;
 			var handler = func.findResumeHandler(instance, tag, lookup_pc);
-			// if (handler.handler_pc >= 0) {
-				
-			// 	return null;
-			// }
+			if (handler.handler_pc >= 0) {
+				var cont = Continuation.new(stack, prev);
+				prev.parent = null;
+				prev.parent_rsp_ptr = Pointer.NULL;
+				Trace.OUT.puts("FOUND").ln();
+				return null;
+			}
 
 			prev = parent;
 		}
