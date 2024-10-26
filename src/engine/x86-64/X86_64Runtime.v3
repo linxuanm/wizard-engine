@@ -153,32 +153,33 @@ component X86_64Runtime {
 		var stack = to_stack.load<X86_64Stack>();
 		X86_64Stack.!(curStack).moveToStack(stack, n_vals);
 	}
-	def runtime_handle_suspend(instance: Instance, tag_index: int) -> Throwable {
+	// Returns the parent stack with a handler for the current suspension.
+	// For communication purposes, also pushes [cont] onto the current
+	// stack, where {cont} is the resulting continuation.
+	def runtime_handle_suspend(instance: Instance, tag_index: int) -> Pointer {
 		var stack = curStack.setRsp(CiRuntime.callerSp());
 		var tag = instance.tags[tag_index];
-
 		var prev = stack;
 		while (prev.parent != null) {
 			var parent = X86_64Stack.!(prev.parent);
-			var accessor = TargetFrame(parent.rsp).getFrameAccessor();
-			var lookup_pc = accessor.pc();
-			var func = accessor.func().decl;
-			var handler = func.findResumeHandler(instance, tag, lookup_pc);
-			if (handler.handler_pc >= 0) {
+			var frame = TargetFrame(parent.rsp);
+			if (!parent.findSuspendHandler(frame, tag)) { // handler found
 				var cont = Continuation.new(stack, prev);
 				prev.parent = null;
 				prev.parent_rsp_ptr = Pointer.NULL;
+
+
+
 				Trace.OUT.puts("FOUND").ln();
-				return null;
+				return Pointer.NULL;
 			}
 
 			prev = parent;
 		}
 
-		// var foo = 1 / 0;
-
 		// Not handled
-		return stack.trap(TrapReason.INVALID_SUSPEND);
+		stack.push(Values.REF_NULL);
+		return Pointer.NULL;
 	}
 
 	//=====================================================================
