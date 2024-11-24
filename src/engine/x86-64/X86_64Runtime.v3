@@ -168,10 +168,12 @@ component X86_64Runtime {
 		stack.push(Value.Ref(cont));
 		return null;
 	}
-	// Returns the parent stack with a handler for the current suspension.
-	// For communication purposes, also pushes [cont] onto the current
-	// stack, where {cont} is the resulting continuation.
-	def runtime_handle_suspend(instance: Instance, tag_index: int) -> Pointer {
+	// Unwinds the stack chain and sets {curStack} to the stack that can handle
+	// the suspension (or throw an error on the top-most stack if no sush handler
+	// is found). Then, the tag parameters and the continuation is pushed onto
+	// the handler stack.
+	// This function returns a delta to the sidetable (-1 if none found).
+	def runtime_handle_suspend(instance: Instance, tag_index: int) -> int {
 		var stack = curStack.setRsp(CiRuntime.callerSp());
 		var tag = instance.tags[tag_index];
 		var prev = stack;
@@ -180,21 +182,21 @@ component X86_64Runtime {
 			var frame = TargetFrame(parent.rsp);
 			if (!parent.findSuspendHandler(frame, tag)) { // handler found
 				var cont = Continuation.new(stack, prev);
+				stack.state_ = StackState.SUSPENDED;
 				prev.parent = null;
 				prev.parent_rsp_ptr = Pointer.NULL;
 
 
 
 				Trace.OUT.puts("FOUND").ln();
-				return Pointer.NULL;
+				curStack = parent;
+				return 0;
 			}
 
 			prev = parent;
 		}
 
-		// Not handled
-		stack.push(Values.REF_NULL);
-		return Pointer.NULL;
+		return -1;
 	}
 
 	//=====================================================================

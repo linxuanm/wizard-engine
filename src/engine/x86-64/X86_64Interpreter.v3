@@ -2231,11 +2231,10 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			}
 
 			restoreCallerIVars();
-			// TODO: ask about restoring r_vsp
+			// load %stack
 			asm.movq_r_m(r_stack, m_curStack);
 			// mov %vsp, [%stack.vsp]
 			asm.movq_r_m(r_vsp, r_stack.plus(offsets.X86_64Stack_vsp));
-
 			endHandler();
 
 			{
@@ -2269,6 +2268,60 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 				masm.emit_jump_r(xenv.scratch);
 			}
 		}
+		// bindHandler(Opcode.SUSPEND); {
+    //  var prev = r_tmp0;
+    //  var parent = r_tmp1;
+    //  var handlers = r_tmp3;
+    //  var tag_index = r_tmp4;
+    //  var m_curStack = X86_64Addr.new(null, null, 1, int.view(offsets.X86_64Runtime_curStack - Pointer.NULL));
+    //  computeCurIpForTrap(-1);
+    //  computePcFromCurIp();
+    //  genReadUleb32(tag_index); // read tag index
+    //  // mov %prev, [m_curStack]
+    //  asm.movq_r_m(prev, masm.absPointer(offsets.X86_64Runtime_curStack));
+    //  // mov %parent, [%prev.parent]
+    //  asm.movq_r_m(parent, prev.plus(offsets.X86_64Stack_parent));
+    //  // null check
+    //  asm.q.cmp_r_i(parent, 0);
+    //  asm.jc_rel_far(X86_64Conds.Z, newTrapLabel(TrapReason.INVALID_SUSPEND));
+    //  var lookup_start = X86_64Label.new(), lookup_end = X86_64Label.new();
+    //  // label: start
+    //  asm.bind(lookup_start);
+    //  // mov %handlers, [%parent.curr_resume_handler]
+    //  // asm.movq_r_m(handlers, parent.plus(offsets.X86_64Stack_curr_resume_handler));
+    //  saveCallerIVars();
+    //  callRuntime(refRuntimeCall(RT.runtime_handle_suspend), [r_instance, tag_index], false);
+    //  restoreCallerIVars();
+    //  var hentry = r_tmp4;
+    //  // mov %hentry, %runtime_ret0
+    //  asm.movq_r_r(hentry, r_runtime_ret0);
+    //  // null check
+    //  asm.q.cmp_r_i(hentry, 0);
+    //  asm.jc_rel_near(X86_64Conds.NZ, lookup_end);
+    //  // mov %prev, %parent
+    //  asm.movq_r_r(prev, parent);
+    //  // mov %parent, [parent.parent]
+    //  asm.movq_r_m(parent, parent.plus(offsets.X86_64Stack_parent));
+    //  asm.q.cmp_r_i(parent, 0);
+    //  asm.jc_rel_far(X86_64Conds.Z, newTrapLabel(TrapReason.INVALID_SUSPEND));
+    //  asm.jmp_rel_near(lookup_start);
+    //  asm.bind(lookup_end);
+    //  var r_stack = r_tmp3;
+    //  // mov %stack, [m_curStack]
+    //  asm.movq_r_m(r_stack, m_curStack);
+    //  // move values to new stack
+    //  // save interpreter values to current stack
+    //  // mov [%stack.rsp], %rsp
+    //  asm.movq_m_r(r_stack.plus(offsets.X86_64Stack_rsp), r_sp);
+    //  // mov [%stack.vsp], %vsp
+    //  asm.movq_m_r(r_stack.plus(offsets.X86_64Stack_vsp), r_vsp);
+    //  // unbind parent -> prev chain
+    //  // mov [prev.parent], 0
+    //  asm.movq_m_i(prev.plus(offsets.X86_64Stack_parent), 0);
+    //  // mov %sp, [parent.sp]
+    //  asm.movq_r_m(r_sp, parent.plus(offsets.X86_64Stack_rsp));
+    //  endHandler();
+    // }
 		writeDispatchEntry(dispatchTables[0].1, InternalOpcode.PROBE.code, w.atEnd().pos); {
 			computeCurIpFromIp(-1);
 			computePcFromCurIp();
