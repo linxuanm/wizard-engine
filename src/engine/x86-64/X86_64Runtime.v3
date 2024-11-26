@@ -179,8 +179,9 @@ component X86_64Runtime {
 		var prev = stack;
 		while (prev.parent != null) {
 			var parent = X86_64Stack.!(prev.parent);
-			var frame = TargetFrame(parent.rsp);
-			if (!parent.findSuspendHandler(frame, tag)) { // handler found
+			var frame = TargetFrame(parent.rsp + Pointer.SIZE);
+			var result = parent.findSuspendHandler(frame, tag);
+			if (result.0 >= 0) { // handler found
 				var cont = Continuation.new(stack, prev);
 				stack.state_ = StackState.SUSPENDED;
 				prev.parent = null;
