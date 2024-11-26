@@ -172,7 +172,7 @@ component X86_64Runtime {
 	// the suspension (or throw an error on the top-most stack if no sush handler
 	// is found). Then, the tag parameters and the continuation is pushed onto
 	// the handler stack.
-	// This function returns a delta to the sidetable (-1 if none found).
+	// This function returns the order/index of the found handler (-1 if none).
 	def runtime_handle_suspend(instance: Instance, tag_index: int) -> int {
 		var stack = curStack.setRsp(CiRuntime.callerSp());
 		var tag = instance.tags[tag_index];
@@ -186,17 +186,12 @@ component X86_64Runtime {
 				stack.state_ = StackState.SUSPENDED;
 				prev.parent = null;
 				prev.parent_rsp_ptr = Pointer.NULL;
-
-
-
-				Trace.OUT.puts("FOUND").ln();
 				curStack = parent;
+				curStack.rsp += Pointer.SIZE; // pop ret addr
 				return 0;
 			}
-
 			prev = parent;
 		}
-
 		return -1;
 	}
 

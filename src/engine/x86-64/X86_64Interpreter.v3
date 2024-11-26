@@ -2284,12 +2284,16 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			computePcFromCurIp();
 			genReadUleb32(tag_index); // read tag index
 
-			// asm.movq_r_m(handlers, parent.plus(offsets.X86_64Stack_curr_resume_handler));
+			var switch = X86_64Label.new();
 			saveCallerIVars();
 			callRuntime(refRuntimeCall(RT.runtime_handle_suspend), [r_instance, tag_index], false);
+			asm.d.cmp_r_i(r_ret_throw, -1);
+			asm.jc_rel_near(X86_64Conds.NZ, switch);
+			asm.jmp_rel_far(newTrapLabel(TrapReason.INVALID_SUSPEND));
+
+			asm.bind(switch);
 			restoreCallerIVars();
-			
-			
+
 			endHandler();
     }
 		writeDispatchEntry(dispatchTables[0].1, InternalOpcode.PROBE.code, w.atEnd().pos); {
