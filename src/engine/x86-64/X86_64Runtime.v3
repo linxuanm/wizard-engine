@@ -196,7 +196,6 @@ component X86_64Runtime {
 			}
 			prev = parent;
 		}
-		Trace.OUT.put1("NOT FOUND tag %d", tag_index).ln();
 		return -1;
 	}
 
