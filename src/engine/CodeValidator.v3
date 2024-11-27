@@ -1626,9 +1626,10 @@ class SidetableBuilder {
 			OUT.ln();
 		}
 		// suspension pushes an extra continuation reference onto the stack
-		val_stack_top += 1;
+		val_stack_top += tag.fields.length + 1;
 		var valcount = labelArgs(target).length;
 		var popcount = val_stack_top - valcount - target.val_stack_top;
+		// Trace.OUT.put3("stk_top[%d] valcount[%d] popcount[%d]", val_stack_top, valcount, popcount).ln();
 		Sidetables.putSuspendHandlerEntry(sidetable, rel(pos), valcount, popcount, target.first_ref);
 		target.first_ref = stp;
 	}

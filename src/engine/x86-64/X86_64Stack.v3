@@ -160,7 +160,6 @@ class X86_64Stack extends WasmStack {
 	def findSuspendHandler(frame: TargetFrame, tag: Tag) -> (int, int) {
 		var accessor = frame.getFrameAccessor();
 		var func = accessor.func();
-		Trace.OUT.put1("FINDING HANDLER IN FUNC %q", func.render).ln();
 		var handler = func.decl.findSuspendHandler(func.instance, tag, accessor.pc());
 
 		if (handler.order >= 0) {
