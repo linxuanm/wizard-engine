@@ -231,7 +231,9 @@ class X86_64Stack extends WasmStack {
 		parent_rsp_ptr = Pointer.NULL;
 		func = null;
 	}
-
+	// def pushReenterStub() {
+	// 	pushRspPointer(STACK_REENTER_FUNC_STUB.getEntry() + NOP_ENTRY);
+	// }
 	private def pushRspPointer(p: Pointer) -> Pointer {
 		rsp = rsp + -Pointer.SIZE;
 		(rsp + 0).store<Pointer>(p);
@@ -478,6 +480,7 @@ def RETADDR_SIZE = Pointer.SIZE;
 def V3_STACK_RESUME_FUNC = X86_64PreGenFunc<(X86_64Stack, X86_64Stack), Throwable>.new("v3-stack-resume", X86_64SimpleStub.new("v3-stack-resume", 0), genV3StackResumeStub);
 def STACK_RETURN_PARENT_STUB = X86_64PreGenStub.new("stack-return-parent", X86_64ReturnParentStub.new(), genStackReturnParentStub);
 def STACK_ENTER_FUNC_STUB = X86_64PreGenStub.new("stack-enter-func", X86_64SimpleStub.new("stack-enter-func", 0), genStackEnterFuncStub);
+// def STACK_REENTER_FUNC_STUB = X86_64PreGenStub.new("stack-reenter-func", X86_64SimpleStub.new("stack-reenter-func", 0), null); // TODO[ss]: remove
 def STACK_UNWIND_STUB = X86_64PreGenStub.new("stack-unwind", X86_64UnwindStub.new("stack-unwind"), genStackUnwind(_, _, null));
 def STACK_OVERFLOW_STUB = X86_64PreGenStub.new("stack-overflow", X86_64UnwindStub.new("stack-overflow"), genStackUnwind(_, _, Execute.trapObjects[TrapReason.STACK_OVERFLOW.tag]));
 

@@ -174,24 +174,29 @@ component X86_64Runtime {
 	// the handler stack.
 	// This function returns the order/index of the found handler (-1 if none).
 	def runtime_handle_suspend(instance: Instance, tag_index: int) -> int {
-		var stack = curStack.setRsp(CiRuntime.callerSp());
+		var stack = curStack;
 		var tag = instance.tags[tag_index];
 		var prev = stack;
+		var vals = stack.popN(tag.sig.params);
 		while (prev.parent != null) {
 			var parent = X86_64Stack.!(prev.parent);
 			var frame = TargetFrame(parent.rsp + Pointer.SIZE);
 			var result = parent.findSuspendHandler(frame, tag);
 			if (result.0 >= 0) { // handler found
 				var cont = Continuation.new(stack, prev);
-				stack.state_ = StackState.SUSPENDED;
+				stack.state_ = if (tag.sig.results.length == 0, StackState.RESUMABLE, StackState.SUSPENDED);
 				prev.parent = null;
-				prev.parent_rsp_ptr = Pointer.NULL;
+				// prev.parent_rsp_ptr = Pointer.NULL;
 				curStack = parent;
+				curStack.state_ = StackState.RUNNING;
+				curStack.pushN(vals);
+				curStack.push(Value.Ref(cont));
 				curStack.rsp += Pointer.SIZE; // pop ret addr
 				return 0;
 			}
 			prev = parent;
 		}
+		Trace.OUT.put1("NOT FOUND tag %d", tag_index).ln();
 		return -1;
 	}
 
