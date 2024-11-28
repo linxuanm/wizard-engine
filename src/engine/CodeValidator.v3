@@ -1134,9 +1134,11 @@ class CodeValidator(extensions: Extension.set, limits: Limits, module: Module, e
 
 					popE(ValueTypes.Ref(true, ct));
 					ctlxfer.refR(ct.sig.params.length, handlers.length);
-					checkSignature(ct.sig);
-
+					
+					var p = ct.sig.params, r = ct.sig.results;
+					if (p.length > 0) checkAndPopArgs(p);
 					readAndCheckContHandlerTable(ct, handlers);
+					if (r.length > 0) pushTypes(r);
 				}
 				RESUME_THROW => {
 					var ct = parser.readCont();
@@ -1629,7 +1631,8 @@ class SidetableBuilder {
 		val_stack_top += tag.fields.length + 1;
 		var valcount = labelArgs(target).length;
 		var popcount = val_stack_top - valcount - target.val_stack_top;
-		// Trace.OUT.put3("stk_top[%d] valcount[%d] popcount[%d]", val_stack_top, valcount, popcount).ln();
+		Trace.OUT.put2("stk_top[%d] valcount[%d] ", val_stack_top, valcount);
+		Trace.OUT.put2("popcount[%d] target_stk_top[%d]", popcount, target.val_stack_top).ln();
 		Sidetables.putSuspendHandlerEntry(sidetable, rel(pos), valcount, popcount, target.first_ref);
 		target.first_ref = stp;
 	}
