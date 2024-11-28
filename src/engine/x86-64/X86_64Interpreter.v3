@@ -2285,7 +2285,9 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 
 			var suspend_stub = X86_64Label.new();
 			asm.call_rel_far(suspend_stub);
-			asm.jmp_rel_far(newTrapLabel(TrapReason.UNREACHABLE));
+			// asm.jmp_rel_far(newTrapLabel(TrapReason.UNREACHABLE));
+			restoreCallerIVars();
+			endHandler();
 
 			asm.bind(suspend_stub); {
 				// save the new rsp with added reentry address
