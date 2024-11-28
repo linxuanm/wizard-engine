@@ -1,4 +1,0 @@
-break X86_64StackManager.runOnFreshStack
-break X86_64Stack.throw
-run
-break *0x082E9520
