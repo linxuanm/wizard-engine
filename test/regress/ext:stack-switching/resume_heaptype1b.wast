@@ -1,0 +1,30 @@
+(module
+  (type $f (func (result i32)))
+  (type $c (cont $f))
+  (tag $tag (param i32))
+
+  (func $foo (result i32)
+    (local $struct i32)
+    (local.set $struct (i32.const 42))
+
+    (suspend $tag (i32.const 6))
+    (local.get $struct)
+  )
+  (elem declare func $foo)
+  (func (export "get_0") (result i32)
+    (local $temp (ref null $c))
+
+    (block $b (result i32 (ref null $c))
+      (cont.new $c (ref.func $foo))
+      (resume $c (on $tag $b))
+      (drop)
+      (i32.const 0)
+      (ref.null $c)
+    )
+    (local.set $temp)
+    (drop)
+    (resume $c (local.get $temp))
+  )
+)
+
+(assert_return (invoke "get_0") (i32.const 42))
