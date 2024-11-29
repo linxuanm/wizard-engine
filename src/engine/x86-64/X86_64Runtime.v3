@@ -185,9 +185,13 @@ component X86_64Runtime {
 			var result = parent.findSuspendHandler(frame, tag);
 			if (result.0 >= 0) { // handler found
 				var cont = Continuation.new(stack, prev);
-				stack.state_ = if (tag.sig.results.length == 0, StackState.RESUMABLE, StackState.SUSPENDED);
+				// set stack params arity
+				stack.params_arity = tag.sig.results.length;
+				stack.state_ = StackState.SUSPENDED;
+				// dummy bind with 0 values to update stack state
+				stack.bind([]);
+				
 				prev.parent = null;
-				// prev.parent_rsp_ptr = Pointer.NULL;
 				curStack = parent;
 				curStack.state_ = StackState.RUNNING;
 				curStack.pushN(vals);

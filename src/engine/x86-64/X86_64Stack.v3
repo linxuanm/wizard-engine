@@ -17,7 +17,7 @@ class X86_64Stack extends WasmStack {
 	// other, assert that this is {null} on the child stack and manually set it).
 	var parent_rsp_ptr: Pointer;
 
-	private var params_arity = -1;
+	var params_arity = -1;
 	var return_results: Array<ValueType>;
 	var state_: StackState;
 

@@ -2291,7 +2291,6 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 
 			callRuntime(refRuntimeCall(RT.runtime_handle_suspend), [r_instance, tag_index], false);
 			asm.call_rel_far(suspend_stub);
-			// asm.jmp_rel_far(newTrapLabel(TrapReason.UNREACHABLE));
 			restoreCallerIVars();
 			endHandler();
 
