@@ -2284,18 +2284,19 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			saveCallerIVars();
 
 			var suspend_stub = X86_64Label.new();
+			// save the new rsp with added reentry address
+			asm.movq_r_m(r_scratch, m_curStack);
+			asm.movq_m_r(r_scratch.plus(offsets.X86_64Stack_rsp), r_sp);
+			asm.q.sub_m_i(r_scratch.plus(offsets.X86_64Stack_rsp), Pointer.SIZE);
+
+			callRuntime(refRuntimeCall(RT.runtime_handle_suspend), [r_instance, tag_index], false);
 			asm.call_rel_far(suspend_stub);
 			// asm.jmp_rel_far(newTrapLabel(TrapReason.UNREACHABLE));
 			restoreCallerIVars();
 			endHandler();
 
 			asm.bind(suspend_stub); {
-				// save the new rsp with added reentry address
-				asm.movq_r_m(r_scratch, m_curStack);
-				asm.movq_m_r(r_scratch.plus(offsets.X86_64Stack_rsp), r_sp);
-
 				var noexcept = X86_64Label.new();
-				callRuntime(refRuntimeCall(RT.runtime_handle_suspend), [r_instance, tag_index], false);
 				asm.d.cmp_r_i(r_ret_throw, -1);
 				asm.jc_rel_near(X86_64Conds.NZ, noexcept);
 				masm.emit_pop_r(ValueKind.REF, xenv.scratch);
