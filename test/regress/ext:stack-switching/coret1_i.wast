@@ -11,11 +11,11 @@
 
   (elem declare func $add)
 
-  (func (export "main") (param i32)
+  (func (export "main")
     (cont.new $c1 (ref.func $add))
     (resume $c1)
     (drop)
   )
 )
 
-(assert_suspension (invoke "main" (i32.const 0)) "unhandled tag")
+(assert_suspension (invoke "main") "unhandled tag")
