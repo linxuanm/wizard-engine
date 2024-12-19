@@ -4,14 +4,13 @@
   (type $f2 (func (param (ref null $c1))))
   (type $c2 (cont $f2))
   (tag $e)
-  (func $s
-    (ref.null $c2)
-    (switch $c2 $e)
-  )
+  (func $p (param (ref null $c1)))
+  (elem declare func $p)
+  (func $s (switch $c2 $e (cont.new $c2 (ref.func $p))))
   (elem declare func $s)
   (func (export "main")
     (resume $c1 (cont.new $c1 (ref.func $s)))
   )
 )
 
-(assert_trap (invoke "main") "null continuation")
+(assert_suspension (invoke "main") "unhandled tag")
