@@ -88,6 +88,13 @@ def eqHeapTypeDecl(x: HeapTypeDecl, y: HeapTypeDecl) -> bool {
 			}
 			_ => return false;
 		}
+		px: ContDecl => match (y) {
+			py: ContDecl => {
+				return Arrays.allTrue(px.sig.params, py.sig.params, ValueType.==)
+					&& Arrays.allTrue(px.sig.results, py.sig.results, ValueType.==);
+			}
+			_ => return false;
+		}
 	}
 	return false;
 }
@@ -196,6 +203,11 @@ class RecGroup(length: int) {
 						d = SigDecl.new(x.final, ns, Arrays.dup(x.params), Arrays.dup(x.results));
 					}
 				}
+				x: ContDecl => {
+					if (isOpen || hasOpenValueType(x.sig.params) || hasOpenValueType(x.sig.results)) {
+						d = ContDecl.new(SigDecl.new(x.final, ns, Arrays.dup(x.params), Arrays.dup(x.results)));
+					}
+				}
 			}
 			if (Trace.canon) Trace.OUT.put3("%q hash=%d open=%z", d.render, d.hash, d != decls[i]).ln();
 			d.recgrp_index = i;
@@ -235,6 +247,7 @@ class RecGroup(length: int) {
 				x: StructDecl => return HeapType.Struct(x);
 				x: ArrayDecl => return HeapType.Array(x);
 				x: SigDecl => return HeapType.Func(x);
+				x: ContDecl => return HeapType.Cont(x);
 				_ => return ht; // shouldn't happen
 			}
 			_ => return ht;
