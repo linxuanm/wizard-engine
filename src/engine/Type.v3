@@ -79,7 +79,6 @@ component ValueTypes {
 	def NULLFUNCREF = ValueType.Ref(true, HeapType.NOFUNC);
 	def NULLEXTERNREF = ValueType.Ref(true, HeapType.NOEXTERN);
 
-
 	def ANYREF_NONNULL = ValueType.Ref(false, HeapType.ANY);
 	def EXTERNREF_NONNULL = ValueType.Ref(false, HeapType.EXTERN);
 	def EQREF_NONNULL = ValueType.Ref(false, HeapType.EQ);
@@ -326,6 +325,8 @@ component TypeRelation {
 		for (t = to; t != null; t = t.getFirstSuperType()) {
 			if (from.canonEq(t)) return TypeEquiv.SUPER;
 		}
+		Trace.OUT.put2("Fails on %q and %q", from.render, to.render).ln();
+		Trace.OUT.put2("Canon ID: %d and %d", from.canon_id, to.canon_id).ln();
 		return TypeEquiv.UNRELATED;
 	}
 	def compareNullable(f: bool, t: bool) -> TypeEquiv {
