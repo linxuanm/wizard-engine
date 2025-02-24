@@ -1484,12 +1484,7 @@ class X86_64MacroAssembler extends MacroAssembler {
 		if (offsets == null) offsets = V3Offsets.new();
 		return offsets;
 	}
-	// [%cont.bottom.parent_rsp_ptr] = value
-	def emit_set_cont_bottom_parent(cont: X86_64Gpr, value: X86_64Gpr) {
-		asm.movq_r_m(scratch, cont.plus(offsets.Continuation_bottom));
-		asm.movq_r_m(scratch, scratch.plus(offsets.X86_64Stack_parent_rsp_ptr));
-		asm.movq_m_r(scratch.plus(0), value);
-	}
+	// DELETE
 	// stores current %rsp and %vsp into `from` stack and populate with `to` stack
 	def emit_switch_stack_ptr_context(from: X86_64Gpr, to: X86_64Gpr, rsp: X86_64Gpr, vsp: X86_64Gpr) {
 		asm.movq_m_r(from.plus(offsets.X86_64Stack_vsp), vsp);
@@ -1523,16 +1518,42 @@ class X86_64MacroAssembler extends MacroAssembler {
 		asm.q.sub_r_r(from_vsp, mov_size);
 		emit_value_copy(top_vsp, from_vsp, n_vals, xmm0);
 	}
-	// set flags and parent for %cont during resume
-	def emit_configure_cont(curStack: X86_64Gpr, cont: X86_64Gpr) {
-		// mov [%curStack.state_], StackState.CALL_CHILD.tag
-		asm.movq_m_i(curStack.plus(offsets.X86_64Stack_state), StackState.CALL_CHILD.tag);
-		// mov [%top.state_], StackState.RUNNING.tag
-		asm.movq_r_m(scratch, cont.plus(offsets.Continuation_top));
-		asm.movq_m_i(scratch.plus(offsets.X86_64Stack_state), StackState.RUNNING.tag);
-		// mov [%bottom.parent], (r_scratch == %curStack)
+	// END DELETE
+
+	def emit_set_stack_state(stk: Reg, state: StackState) {
+		asm.movq_m_i(G(stk).plus(offsets.X86_64Stack_state), state.tag);
+	}
+	def emit_validate_and_consume_cont(r_cont: Reg) {
+		var cont = G(r_cont);
+		asm.q.cmp_r_i(cont, 0);
+		asm.jc_rel_far(X86_64Conds.Z, x86TrapLabel(TrapReason.NULL_DEREF));
+		asm.movq_r_m(scratch, cont.plus(offsets.Continuation_used));
+		asm.q.cmp_r_i(scratch, 0);
+		asm.jc_rel_far(X86_64Conds.NZ, x86TrapLabel(TrapReason.USED_CONTINUATION));
+		asm.movq_m_i(cont.plus(offsets.Continuation_used), 1);
+	}
+	def emit_chain_cont_to_parent(r_parent: Reg, r_cont: Reg) {
+		var r_scratch = regConfig.scratch;
+		var cont = G(r_cont), parent = G(r_parent);
+		emit_set_stack_state(r_parent, StackState.CALL_CHILD); // XXX: not needed for {switch}
+		emit_mov_r_m(ValueKind.REF, r_scratch, MasmAddr(r_cont, offsets.Continuation_top));
+		emit_set_stack_state(r_scratch, StackState.RUNNING);
+
+		// cont.bottom.parent = parent;
 		asm.movq_r_m(scratch, cont.plus(offsets.Continuation_bottom));
-		asm.movq_m_r(scratch.plus(offsets.X86_64Stack_parent), curStack);
+		asm.movq_m_r(scratch.plus(offsets.X86_64Stack_parent), parent);
+
+		// *cont.bottom.parent_rsp_ptr = parent.rsp
+		asm.movq_r_m(parent, parent.plus(offsets.X86_64Stack_rsp));
+		asm.movq_r_m(scratch, scratch.plus(offsets.X86_64Stack_parent_rsp_ptr));
+		asm.movq_m_r(scratch.plus(0), parent);
+		// reserve space for return address on %parent
+		asm.q.sub_m_i(scratch.plus(0), Pointer.SIZE);
+	}
+	// Stores %rsp and %vsp into {from} stack and update with the ones from {to}.
+	def emit_change_sp_context(from: Reg, to: Reg, rsp: Reg, vsp: Reg);
+	private def x86TrapLabel(reason: TrapReason) -> X86_64Label {
+		return X86_64MasmLabel.!(newTrapLabel(reason)).label;
 	}
 }
 
