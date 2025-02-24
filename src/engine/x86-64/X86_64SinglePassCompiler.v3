@@ -931,6 +931,58 @@ class X86_64SinglePassCompiler extends SinglePassCompiler {
 		state.push(a.kindFlagsMatching(kind, IN_REG), a.reg, 0);
 	}
 
+	def visit_RESUME(cont_id: u31, handlers: Range<SuspensionHandler>) {
+		var resumeStub = X86_64Label.new(), done = X86_64Label.new();
+		var cont_decl = ContDecl.!(module.heaptypes[cont_id]);
+
+		if (checkForConstNull(state.peek())) return;
+		var cont = popReg();
+		masm.emit_validate_and_consume_cont(cont.reg);
+		var curStack = allocRegTos(ValueKind.REF);
+		masm.emit_get_curstack(curStack);
+		masm.emit_chain_cont_to_parent(curStack, cont.reg);
+
+		var n_vals = cont_decl.sig.params.length;
+		var vals = state.state[state.state.length - n_vals ...];
+		// // TODO: move vals
+		dropN(u32.!(n_vals));
+
+		asm.call_rel_far(resumeStub);
+		// /* === CHILD STACK RUNNING === */
+		masm.emit_load_curstack_vsp(regs.vsp);
+		state.pushN(cont_decl.sig.results);
+
+		asm.jmp_rel_near(done);
+		asm.bind(resumeStub); {
+			var tmp1 = allocTmp(ValueKind.REF);
+			var tmp2 = allocTmp(ValueKind.REF);
+			genResumeStub(cont.reg, tmp1, tmp2, false);
+		}
+		asm.bind(done);
+	}
+
+	private def genResumeStub(cont: Reg, from: Reg, to: Reg, is_resume_throw: bool) {
+		var offsets = V3Offsets.new();
+		var curStack = MasmAddr(Reg(0), int.!(offsets.X86_64Runtime_curStack - Pointer.NULL));
+
+		masm.emit_get_curstack(from);
+		masm.emit_mov_r_m(ValueKind.REF, to, MasmAddr(cont, offsets.Continuation_top));
+		masm.emit_mov_m_r(ValueKind.REF, curStack, to);
+		masm.emit_change_sp_context(from, to, xenv.sp, xenv.vsp);
+		// if (is_resume_throw) masm.emit_set_error_on_resume(to, xenv.ret_throw);
+		masm.emit_pop_r(ValueKind.REF, xenv.scratch);
+		masm.emit_jump_r(xenv.scratch);
+	}
+
+	private def checkForConstNull(sv: SpcVal) -> bool {
+		if (sv.isConst() && sv.const == 0) {
+			emitTrap(TrapReason.NULL_DEREF);
+			setUnreachable();
+			return true;
+		}
+		return false;
+	}
+
 	// r1 = op(r1)
 	private def do_op1_r<T>(kind: ValueKind, emit: (X86_64Gpr -> T)) -> bool {
 		var sv = popRegToOverwrite(), r = G(sv.reg);
