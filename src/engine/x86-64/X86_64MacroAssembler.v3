@@ -1484,25 +1484,6 @@ class X86_64MacroAssembler extends MacroAssembler {
 		if (offsets == null) offsets = V3Offsets.new();
 		return offsets;
 	}
-	// DELETE
-	// stores current %rsp and %vsp into `from` stack and populate with `to` stack
-	def emit_switch_stack_ptr_context(from: X86_64Gpr, to: X86_64Gpr, rsp: X86_64Gpr, vsp: X86_64Gpr) {
-		asm.movq_m_r(from.plus(offsets.X86_64Stack_vsp), vsp);
-		asm.movq_m_r(from.plus(offsets.X86_64Stack_rsp), rsp);
-		asm.movq_r_m(vsp, to.plus(offsets.X86_64Stack_vsp));
-		asm.movq_r_m(rsp, to.plus(offsets.X86_64Stack_rsp));
-	}
-	// consumes and clears the throw flag from a stack
-	def emit_set_error_on_resume(stack: X86_64Gpr, throw_reg: X86_64Gpr) {
-		asm.movq_r_m(throw_reg, stack.plus(offsets.X86_64Stack_throw_on_resume));
-		asm.movq_m_i(stack.plus(offsets.X86_64Stack_throw_on_resume), 0);
-	}
-	// get the number of parameters to a continuation
-	def emit_get_params_length(cont: X86_64Gpr, dest: X86_64Gpr) {
-		asm.movq_r_m(scratch, cont.plus(offsets.ContDecl_sig));
-		asm.movq_r_m(scratch, scratch.plus(offsets.SigDecl_params));
-		asm.movd_r_m(dest, scratch.plus(offsets.Array_length));
-	}
 	// move values from the current stack to %cont.top, following %cont's typing
 	def emit_cont_mv(from_vsp: X86_64Gpr, cont: X86_64Gpr, n_vals: X86_64Gpr, tmp1: X86_64Gpr, tmp2: X86_64Gpr, xmm0: X86_64Xmmr) {
 		var top_vsp = tmp1, mov_size = tmp2;
@@ -1518,42 +1499,43 @@ class X86_64MacroAssembler extends MacroAssembler {
 		asm.q.sub_r_r(from_vsp, mov_size);
 		emit_value_copy(top_vsp, from_vsp, n_vals, xmm0);
 	}
-	// END DELETE
-
 	def emit_set_stack_state(stk: Reg, state: StackState) {
-		asm.movq_m_i(G(stk).plus(offsets.X86_64Stack_state), state.tag);
+		emit_mov_m_i(MasmAddr(stk, offsets.X86_64Stack_state), state.tag);
 	}
-	def emit_validate_and_consume_cont(r_cont: Reg) {
-		var cont = G(r_cont);
-		asm.q.cmp_r_i(cont, 0);
-		asm.jc_rel_far(X86_64Conds.Z, x86TrapLabel(TrapReason.NULL_DEREF));
-		asm.movq_r_m(scratch, cont.plus(offsets.Continuation_used));
-		asm.q.cmp_r_i(scratch, 0);
-		asm.jc_rel_far(X86_64Conds.NZ, x86TrapLabel(TrapReason.USED_CONTINUATION));
-		asm.movq_m_i(cont.plus(offsets.Continuation_used), 1);
+	def emit_validate_and_consume_cont(cont: Reg) {
+		var scratch = regConfig.scratch;
+		emit_br_r(cont, MasmBrCond.REF_NULL, newTrapLabel(TrapReason.NULL_DEREF));
+		emit_mov_r_m(ValueKind.REF, scratch, MasmAddr(cont, offsets.Continuation_used));
+		emit_br_r(scratch, MasmBrCond.I64_NONZERO, newTrapLabel(TrapReason.USED_CONTINUATION));
+	  emit_mov_m_i(MasmAddr(cont, offsets.Continuation_used), 1);
 	}
-	def emit_chain_cont_to_parent(r_parent: Reg, r_cont: Reg) {
-		var r_scratch = regConfig.scratch;
-		var cont = G(r_cont), parent = G(r_parent);
-		emit_set_stack_state(r_parent, StackState.CALL_CHILD); // XXX: not needed for {switch}
-		emit_mov_r_m(ValueKind.REF, r_scratch, MasmAddr(r_cont, offsets.Continuation_top));
-		emit_set_stack_state(r_scratch, StackState.RUNNING);
+	def emit_chain_cont_to_parent(parent: Reg, cont: Reg) {
+		var scratch = regConfig.scratch;
+		emit_set_stack_state(parent, StackState.CALL_CHILD); // XXX: not needed for {switch}
+		emit_mov_r_m(ValueKind.REF, scratch, MasmAddr(cont, offsets.Continuation_top));
+		emit_set_stack_state(scratch, StackState.RUNNING);
 
 		// cont.bottom.parent = parent;
-		asm.movq_r_m(scratch, cont.plus(offsets.Continuation_bottom));
-		asm.movq_m_r(scratch.plus(offsets.X86_64Stack_parent), parent);
+		emit_mov_r_m(ValueKind.REF, scratch, MasmAddr(cont, offsets.Continuation_bottom));
+		emit_mov_m_r(ValueKind.REF, MasmAddr(scratch, offsets.X86_64Stack_parent), parent);
 
 		// *cont.bottom.parent_rsp_ptr = parent.rsp
-		asm.movq_r_m(parent, parent.plus(offsets.X86_64Stack_rsp));
-		asm.movq_r_m(scratch, scratch.plus(offsets.X86_64Stack_parent_rsp_ptr));
-		asm.movq_m_r(scratch.plus(0), parent);
+		emit_mov_r_m(ValueKind.REF, parent, MasmAddr(parent, offsets.X86_64Stack_rsp));
+		emit_mov_r_m(ValueKind.REF, scratch, MasmAddr(scratch, offsets.X86_64Stack_parent_rsp_ptr));
+		emit_mov_m_r(ValueKind.REF, MasmAddr(scratch, 0), parent);
 		// reserve space for return address on %parent
-		asm.q.sub_m_i(scratch.plus(0), Pointer.SIZE);
+		asm.sub_m_i(G(scratch).plus(0), Pointer.SIZE);
 	}
-	// Stores %rsp and %vsp into {from} stack and update with the ones from {to}.
-	def emit_change_sp_context(from: Reg, to: Reg, rsp: Reg, vsp: Reg);
-	private def x86TrapLabel(reason: TrapReason) -> X86_64Label {
-		return X86_64MasmLabel.!(newTrapLabel(reason)).label;
+	def emit_change_sp_context(from: Reg, to: Reg, rsp: Reg, vsp: Reg) {
+		emit_mov_m_r(ValueKind.REF, MasmAddr(from, offsets.X86_64Stack_vsp), vsp);
+		emit_mov_m_r(ValueKind.REF, MasmAddr(from, offsets.X86_64Stack_rsp), rsp);
+		emit_mov_r_m(ValueKind.REF, vsp, MasmAddr(to, offsets.X86_64Stack_vsp));
+		emit_mov_r_m(ValueKind.REF, rsp, MasmAddr(to, offsets.X86_64Stack_rsp));
+	}
+	// Consumes and clears the throw flag from a stack.
+	def emit_set_error_on_resume(stack: Reg, throw_reg: Reg) {
+		emit_mov_r_m(ValueKind.REF, throw_reg, MasmAddr(stack, offsets.X86_64Stack_throw_on_resume));
+		emit_mov_m_l(MasmAddr(stack, offsets.X86_64Stack_throw_on_resume), 0);
 	}
 }
 
