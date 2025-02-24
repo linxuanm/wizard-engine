@@ -256,6 +256,24 @@ class MacroAssembler(valuerep: Tagging, regConfig: RegConfig) {
 
 	def emit_debugger_breakpoint();
 
+	// ext: stack-switching
+	
+	// stk.state_ = state;
+	def emit_set_stack_state(stk: Reg, state: StackState);
+
+	// Validates {cont} and set {cont.used} to {true};
+	def emit_validate_and_consume_cont(cont: Reg);
+
+	// This should be called after all stack value transfers, but before the
+	// return address is pushed onto parent's {sp}.
+	// Chains {cont} on {parent} by:
+	// - setting the state of both {parent} and {cont}
+	// - setting {cont.parent} and {cont.parent_rsp_ptr}
+	def emit_chain_cont_to_parent(parent: Reg, cont: Reg);
+
+	// Stores %rsp and %vsp into {from} stack and update with the ones from {to}.
+	def emit_change_sp_context(from: Reg, to: Reg, rsp: Reg, vsp: Reg);
+
 	def fatalUnimplemented();
 
 	def negate(cond: MasmBrCond) -> MasmBrCond {
