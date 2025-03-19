@@ -2431,9 +2431,12 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			asm.movq_r_r(r_ip, r_ip_store);
 			saveCallerIVars();
 			var r_cont = r_tmp1;
+
 			genResume(cont_id, r_cont, r_tmp3);
+
 			// move parameter values from %curStack to %cont.top
 			var r_nvals = cont_id;
+
 			masm.emit_cont_mv(r_vsp, r_cont, r_nvals, r_tmp3, r_tmp4, r_xmm0);
 			asm.call_rel_far(resumeStub);
 			/* === CHILD STACK RUNNING === */
@@ -4014,15 +4017,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		asm.movq_r_m(r_scratch, r_scratch.plusR(r_cont_id, offsets.REF_SIZE, offsets.Array_contents));
 		masm.emit_get_params_length(r_scratch, r_nvals);
 		// validates continuation
-		// if (%cont == null) trap(NULL_DEREF);
-		asm.q.cmp_r_i(r_cont, 0);
-		asm.jc_rel_far(X86_64Conds.Z, newTrapLabel(TrapReason.NULL_DEREF));
-		// if ([%cont.used]) trap(USED_CONTINUATION);
-		asm.movq_r_m(r_scratch, r_cont.plus(offsets.Continuation_used));
-		asm.q.cmp_r_i(r_scratch, 0);
-		asm.jc_rel_far(X86_64Conds.NZ, newTrapLabel(TrapReason.USED_CONTINUATION));
-		// mov [%cont.used], 1
-		asm.movq_m_i(r_cont.plus(offsets.Continuation_used), 1);
+		masm.emit_validate_and_consume_cont(xenv.tmp1);
 		// set flags for both stack and set %bottom.parent
 		var r_curStack = tmp1;
 		asm.movq_r_m(r_curStack, m_curStack);

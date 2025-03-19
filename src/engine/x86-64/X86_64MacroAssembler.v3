@@ -1544,6 +1544,46 @@ class X86_64MacroAssembler extends MacroAssembler {
 		asm.movq_r_m(scratch, cont.plus(offsets.Continuation_bottom));
 		asm.movq_m_r(scratch.plus(offsets.X86_64Stack_parent), curStack);
 	}
+
+	// NEW ADDITIONS
+	def emit_set_stack_state(stk: Reg, state: StackState) {
+		emit_mov_m_i(MasmAddr(stk, offsets.X86_64Stack_state), state.tag);
+	}
+	def emit_validate_and_consume_cont(cont: Reg) {
+		var scratch = regConfig.scratch;
+		emit_br_r(cont, MasmBrCond.REF_NULL, newTrapLabel(TrapReason.NULL_DEREF));
+		emit_mov_r_m(ValueKind.REF, scratch, MasmAddr(cont, offsets.Continuation_used));
+		emit_br_r(scratch, MasmBrCond.I64_NONZERO, newTrapLabel(TrapReason.USED_CONTINUATION));
+	  emit_mov_m_i(MasmAddr(cont, offsets.Continuation_used), 1);
+	}
+	def emit_chain_cont_to_parent(parent: Reg, cont: Reg) {
+		var scratch = regConfig.scratch;
+		emit_set_stack_state(parent, StackState.CALL_CHILD); // XXX: not needed for {switch}
+		emit_mov_r_m(ValueKind.REF, scratch, MasmAddr(cont, offsets.Continuation_top));
+		emit_set_stack_state(scratch, StackState.RUNNING);
+
+		// cont.bottom.parent = parent;
+		emit_mov_r_m(ValueKind.REF, scratch, MasmAddr(cont, offsets.Continuation_bottom));
+		emit_mov_m_r(ValueKind.REF, MasmAddr(scratch, offsets.X86_64Stack_parent), parent);
+
+		// *cont.bottom.parent_rsp_ptr = parent.rsp
+		emit_mov_r_m(ValueKind.REF, parent, MasmAddr(parent, offsets.X86_64Stack_rsp));
+		emit_mov_r_m(ValueKind.REF, scratch, MasmAddr(scratch, offsets.X86_64Stack_parent_rsp_ptr));
+		emit_mov_m_r(ValueKind.REF, MasmAddr(scratch, 0), parent);
+		// reserve space for return address on %parent
+		asm.sub_m_i(G(scratch).plus(0), Pointer.SIZE);
+	}
+	def emit_change_sp_context(from: Reg, to: Reg, rsp: Reg, vsp: Reg) {
+		emit_mov_m_r(ValueKind.REF, MasmAddr(from, offsets.X86_64Stack_vsp), vsp);
+		emit_mov_m_r(ValueKind.REF, MasmAddr(from, offsets.X86_64Stack_rsp), rsp);
+		emit_mov_r_m(ValueKind.REF, vsp, MasmAddr(to, offsets.X86_64Stack_vsp));
+		emit_mov_r_m(ValueKind.REF, rsp, MasmAddr(to, offsets.X86_64Stack_rsp));
+	}
+	// Consumes and clears the throw flag from a stack.
+	// def emit_set_error_on_resume(stack: Reg, throw_reg: Reg) {
+	// 	emit_mov_r_m(ValueKind.REF, throw_reg, MasmAddr(stack, offsets.X86_64Stack_throw_on_resume));
+	// 	emit_mov_m_l(MasmAddr(stack, offsets.X86_64Stack_throw_on_resume), 0);
+	// }
 }
 
 // XXX: Simplify relative loads for jump table by improving X86_64Assembler
