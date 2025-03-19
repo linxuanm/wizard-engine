@@ -1509,11 +1509,6 @@ class X86_64MacroAssembler extends MacroAssembler {
 		asm.movq_r_m(vsp, to.plus(offsets.X86_64Stack_vsp));
 		asm.movq_r_m(rsp, to.plus(offsets.X86_64Stack_rsp));
 	}
-	// consumes and clears the throw flag from a stack
-	def emit_set_error_on_resume(stack: X86_64Gpr, throw_reg: X86_64Gpr) {
-		asm.movq_r_m(throw_reg, stack.plus(offsets.X86_64Stack_throw_on_resume));
-		asm.movq_m_i(stack.plus(offsets.X86_64Stack_throw_on_resume), 0);
-	}
 	// get the number of parameters to a continuation
 	def emit_get_params_length(cont: X86_64Gpr, dest: X86_64Gpr) {
 		asm.movq_r_m(scratch, cont.plus(offsets.ContDecl_sig));
