@@ -900,7 +900,14 @@ class X86_64MacroAssembler extends MacroAssembler {
 		asm.jc_rel_near(C.NZ, copy);
 		asm.bind(done);
 	}
-
+	def emit_get_curstack(r: Reg) {
+		var offsets = getOffsets();
+		asm.movq_r_m(G(r), absPointer(offsets.X86_64Runtime_curStack));
+	}
+	def emit_set_curstack(r: Reg) {
+		var offsets = getOffsets();
+		asm.movq_m_r(absPointer(offsets.X86_64Runtime_curStack), G(r));
+	}
 	def emit_store_curstack_vsp(vsp: Reg) {
 		var offsets = getOffsets();
 		asm.movq_r_m(scratch, absPointer(offsets.X86_64Runtime_curStack));

@@ -2261,6 +2261,9 @@ class SpcState(regAlloc: RegAlloc) {
 			push(typeToKindFlags(t) | TAG_STORED | IS_STORED, NO_REG, 0);
 		}
 	}
+	def pushN(vs: Range<ValueType>) {
+		for (t in vs) push(typeToKindFlags(t) | TAG_STORED | IS_STORED, NO_REG, 0);
+	}
 	def peek() -> SpcVal {
 		return state[sp - 1];
 	}
