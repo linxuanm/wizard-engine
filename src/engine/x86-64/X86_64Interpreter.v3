@@ -2493,19 +2493,11 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			masm.emit_chain_cont_to_parent(curStack, cont);
 			masm.emit_switch_curStack_to_cont(cont);
 
-			masm.emit_get_rsp_vsp(xenv.scratch, xenv.sp, xenv.vsp);
-			// masm.emit_pop_r(ValueKind.REF, xenv.scratch);
-			
+			// load only {rsp} from child stack's context (for stack unwinding)
+			masm.emit_mov_r_m(ValueKind.REF, xenv.sp, MasmAddr(xenv.scratch, offsets.X86_64Stack_rsp));
 			callRuntimeDirect(refRuntimeCall(RT.runtime_THROW_RAW), [r_instance, G(tag_index)]);
 			// should not return
 			asm.invalid();
-
-			// plan:
-			// - chain continuation to curStack and context switch to continuation top
-			//   just like {resume}
-			// - adjust %top stack to only have return parent pointer (if not initialized)
-			//   or pointing to frame tip (if initialized)
-			// - call runtime throw function
 		}
 		bindHandler(Opcode.SUSPEND); {
 			var tag_index = r_tmp0, r_cont = r_tmp1;
