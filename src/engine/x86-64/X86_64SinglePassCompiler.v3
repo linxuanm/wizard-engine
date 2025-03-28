@@ -774,6 +774,57 @@ class X86_64SinglePassCompiler extends SinglePassCompiler {
 		state.push(a.kindFlagsMatching(ValueKind.V128, IN_REG), a.reg, 0);
 	}
 
+	def visit_RESUME(cont_id: u31, handlers: Range<SuspensionHandler>) {
+		var offsets = V3Offsets.new();
+		var resumeStub = X86_64Label.new(), done = X86_64Label.new();
+		var cont_decl = ContDecl.!(module.heaptypes[cont_id]);
+
+		if (checkForConstNull(state.peek())) return;
+		var cont = popReg();
+		masm.emit_validate_and_consume_cont(cont.reg);
+
+		// context switch: store to old stack
+		var curStack = allocRegTos(ValueKind.REF);
+		masm.emit_get_curstack(curStack);
+		masm.emit_set_rsp_vsp(curStack, xenv.sp, xenv.vsp);
+
+		// transfer values to child stack
+		var n_vals = cont_decl.sig.params.length;
+		// TODO: move
+		dropN(u32.!(n_vals));
+
+		// // reserve space for call addr
+		asm.sub_m_i(G(curStack).plus(offsets.X86_64Stack_rsp), Pointer.SIZE);
+		masm.emit_chain_cont_to_parent(curStack, cont.reg);
+		masm.emit_switch_curStack_to_cont(cont.reg);
+
+		spillRegAndFree(curStack);
+		asm.call_rel_far(resumeStub);
+		/* === CHILD STACK RUNNING === */
+		emit_reload_regs();
+		if (!runtimeSpillMode.free_regs) state.emitRestoreAll(resolver);
+		state.pushN(cont_decl.sig.results);
+
+		asm.jmp_rel_near(done);
+		asm.bind(resumeStub); {
+			// load new stack pointers
+			masm.emit_get_rsp_vsp(xenv.scratch, xenv.sp, xenv.vsp);
+			// pop address from new stack and go to it
+			masm.emit_pop_r(ValueKind.REF, xenv.scratch);
+			masm.emit_jump_r(xenv.scratch);
+		}
+		asm.bind(done);
+	}
+
+	private def checkForConstNull(sv: SpcVal) -> bool {
+		if (sv.isConst() && sv.const == 0) {
+			emitTrap(TrapReason.NULL_DEREF);
+			setUnreachable();
+			return true;
+		}
+		return false;
+	}
+
 	private def visit_V128_SHIFT1<T>(masm_shift: (X86_64Xmmr, X86_64Gpr, X86_64Gpr, X86_64Xmmr, X86_64Xmmr) -> T) {
 		var b = popReg();
 		var a = popRegToOverwrite();
@@ -930,7 +981,6 @@ class X86_64SinglePassCompiler extends SinglePassCompiler {
 		emit(X(a.reg), X(b.reg), x_tmp, is_signed);
 		state.push(a.kindFlagsMatching(kind, IN_REG), a.reg, 0);
 	}
-
 	// r1 = op(r1)
 	private def do_op1_r<T>(kind: ValueKind, emit: (X86_64Gpr -> T)) -> bool {
 		var sv = popRegToOverwrite(), r = G(sv.reg);
