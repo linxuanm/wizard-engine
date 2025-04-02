@@ -778,32 +778,50 @@ class X86_64SinglePassCompiler extends SinglePassCompiler {
 		var offsets = V3Offsets.new();
 		var resumeStub = X86_64Label.new(), done = X86_64Label.new();
 		var cont_decl = ContDecl.!(module.heaptypes[cont_id]);
-
 		if (checkForConstNull(state.peek())) return;
+
 		var cont = popReg();
 		masm.emit_validate_and_consume_cont(cont.reg);
 
-		// context switch: store to old stack
-		var curStack = allocRegTos(ValueKind.REF);
-		masm.emit_get_curstack(curStack);
-		masm.emit_set_rsp_vsp(curStack, xenv.sp, xenv.vsp);
-
 		// transfer values to child stack
-		var n_vals = cont_decl.sig.params.length;
-		// TODO: move
-		dropN(u32.!(n_vals));
+		state.emitSaveAll(resolver, SpillMode.SAVE_AND_FREE_REGS);
+		// TODO: verify that %cont is preserved after {emitSaveAll}
 
-		// // reserve space for call addr
-		asm.sub_m_i(G(curStack).plus(offsets.X86_64Stack_rsp), Pointer.SIZE);
-		masm.emit_chain_cont_to_parent(curStack, cont.reg);
+		var r_vsp = allocTmpFixed(ValueKind.REF, regs.vsp);
+		var r_nvals = allocTmp(ValueKind.REF);
+		var r_curStack = allocTmp(ValueKind.REF);
+		var r_tmp0 = allocTmp(ValueKind.REF);
+		var r_tmp1 = allocTmp(ValueKind.REF);
+		var r_tmp2 = allocTmp(ValueKind.REF);
+
+		emit_compute_vsp(regs.vsp, state.sp);
+		// call to transfer
+		masm.emit_mov_r_i(r_nvals, cont_decl.sig.params.length);
+		masm.emit_cont_mv(r_vsp, cont.reg, r_nvals, r_tmp0, r_tmp1, r_tmp2);
+		emit_spill_vsp(r_vsp);
+		masm.emit_store_curstack_vsp(regs.vsp);
+		
+		dropN(u32.!(cont_decl.sig.params.length));
+
+		state.emitRestoreAll(resolver);
+		masm.emit_get_curstack(r_curStack);
+
+		// context switch: store to old stack
+		masm.emit_set_rsp_vsp(r_curStack, xenv.sp, xenv.vsp);
+
+		// reserve space for call addr
+		asm.sub_m_i(G(r_curStack).plus(offsets.X86_64Stack_rsp), Pointer.SIZE);
+		masm.emit_chain_cont_to_parent(r_curStack, cont.reg);
 		masm.emit_switch_curStack_to_cont(cont.reg);
 
-		spillRegAndFree(curStack);
 		asm.call_rel_far(resumeStub);
 		/* === CHILD STACK RUNNING === */
-		emit_reload_regs();
-		if (!runtimeSpillMode.free_regs) state.emitRestoreAll(resolver);
 		state.pushN(cont_decl.sig.results);
+		if (!runtimeSpillMode.free_regs) state.emitRestoreAll(resolver);
+		emit_reload_regs();
+		emit_compute_vsp(r_vsp, state.sp);
+		emit_spill_vsp(r_vsp);
+		masm.emit_store_curstack_vsp(r_vsp);
 
 		asm.jmp_rel_near(done);
 		asm.bind(resumeStub); {

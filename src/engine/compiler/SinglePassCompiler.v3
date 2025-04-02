@@ -1729,7 +1729,6 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 		emit_spill_vsp(regs.vsp);
 		masm.emit_store_curstack_vsp(regs.vsp);
 
-
 		emit_reload_regs();
 		if (!probeSpillMode.free_regs) state.emitRestoreAll(resolver);
 	}

@@ -303,6 +303,7 @@ class MacroAssembler(valuerep: Tagging, regConfig: RegConfig) {
 	def emit_call_runtime_checkFuncSigSubtyping();
 
 	def emit_debugger_breakpoint();
+	def emit_cont_mv(from_vsp: Reg, cont: Reg, n_vals: Reg, tmp1: Reg, tmp2: Reg, xmm0: Reg);
 
 	// Gets the number of parameters to a continuation.
 	def emit_get_params_length(cont: Reg, dest: Reg);
