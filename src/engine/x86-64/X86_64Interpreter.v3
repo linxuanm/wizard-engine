@@ -3490,6 +3490,8 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		// save a copy of VSP into valueStack.sp
 		asm.movq_r_m(r_scratch, masm.absPointer(offsets.X86_64Runtime_curStack));
 		asm.movq_m_r(r_scratch.plus(offsets.X86_64Stack_vsp), r_vsp);
+		// save a pointer to {curStack} into {args}
+		
 		// Generate parallel moves from args into param gprs; assume each src register used only once
 		var dst = Array<X86_64Gpr>.new(GPRs.length);
 		for (i < args.length) {
