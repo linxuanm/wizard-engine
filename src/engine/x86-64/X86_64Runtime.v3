@@ -10,8 +10,8 @@ component X86_64Runtime {
 	// tail-call other functions, this routine must handle all these cases. Trapping/throwing
 	// is handled by returning a non-null {Throwable} and tail-calling a {WasmFunction} is handled
 	// by returning that function to the (Wasm) caller, with the stack already containing its arguments.
-	def runtime_callHost(hf: HostFunction) -> (Throwable, WasmFunction) {
-		var stack = curStack.setRsp(CiRuntime.callerSp()); // XXX: accept as parameter?
+	def runtime_callHost(stack: X86_64Stack, hf: HostFunction) -> (Throwable, WasmFunction) {
+		var stack = stack.setRsp(CiRuntime.callerSp()); // XXX: accept as parameter?
 		var args: Range<Value> = stack.popN(hf.sig.params);
 		while (hf != null) {
 			if (Trace.interpreter) Execute.traceCallHostFunction(hf);
@@ -90,7 +90,7 @@ component X86_64Runtime {
 		return Runtime.TABLE_FILL(stack.setRsp(CiRuntime.callerSp()), instance, table_index);
 	}
 
-	def runtime_PROBE_loop(func: WasmFunction, pc: int) -> Throwable {
+	def runtime_PROBE_loop(stack: X86_64Stack, func: WasmFunction, pc: int) -> Throwable {
 		var rsp = CiRuntime.callerSp();
 		var stack = curStack.setRsp(rsp);
 		var frame = TargetFrame(rsp);
@@ -98,7 +98,7 @@ component X86_64Runtime {
 		if (ret != null) return stack.throw(ret);
 		return ret;
 	}
-	def runtime_PROBE_instr(func: WasmFunction, pc: int) -> Throwable {
+	def runtime_PROBE_instr(stack: X86_64Stack, func: WasmFunction, pc: int) -> Throwable {
 		var rsp = CiRuntime.callerSp();
 		var stack = curStack.setRsp(rsp);
 		var frame = TargetFrame(rsp);
@@ -106,15 +106,16 @@ component X86_64Runtime {
 		if (ret != null) return stack.throw(ret);
 		return ret;
 	}
-	def runtime_GET_LOCAL_PROBE(func: WasmFunction, pc: int) -> Probe {
+	def runtime_GET_LOCAL_PROBE(stack: X86_64Stack, func: WasmFunction, pc: int) -> Probe {
 		return func.instance.module.probes[func.decl.func_index][pc];
 	}
+	// TODO: refactor compiler code for passing {curStack}
 	def runtime_getFrameAccessorMetaRef() -> FrameAccessorRef {
 		var rsp = CiRuntime.callerSp();
 		var frame = TargetFrame(rsp);
 		return frame.getFrameAccessor().getMetaRef();
 	}
-	def runtime_TRAP(func: WasmFunction, pc: int, reason: TrapReason) -> Throwable {
+	def runtime_TRAP(stack: X86_64Stack, func: WasmFunction, pc: int, reason: TrapReason) -> Throwable {
 		var rsp = CiRuntime.callerSp();
 		var stack = curStack.setRsp(rsp);
 		if (Debug.runtime) Trace.OUT.put3("runtime_TRAP(%q, @+%d, %s)", func.render, pc, reason.name).ln();
@@ -142,7 +143,7 @@ component X86_64Runtime {
 		var ex = Exception.new(tag, args, null);
 		return stack.throw(ex);
 	}
-	def runtime_THROW_REF(thrown: Throwable) -> Throwable {
+	def runtime_THROW_REF(stack: X86_64Stack, thrown: Throwable) -> Throwable {
 		var rsp = CiRuntime.callerSp();
 		var stack = curStack.setRsp(rsp);
 		return stack.throw(thrown);

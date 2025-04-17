@@ -3496,11 +3496,15 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		var dst = Array<X86_64Gpr>.new(GPRs.length);
 		for (i < args.length) {
 			var sreg = args[i];
-			var dreg = Target.V3_PARAM_GPRS[i + 1];
+			// %rdi: reserved for receiver object due to {Runtime} methods being component methods
+			// %rsi: reserved for {curStack}
+			var dreg = Target.V3_PARAM_GPRS[i + 2];
 			if (sreg != dreg) dst[sreg.regnum] = dreg;
 		}
 		var stk = Array<i8>.new(GPRs.length);
 		for (i < dst.length) orderMoves(dst, stk, i);
+		// load {curStack} to {GPRS[1]}
+		asm.movq_r_m(Target.V3_PARAM_GPRS[1], masm.absPointer(offsets.X86_64Runtime_curStack));
 		// emit actual call
 		asm.callr(int.!((abs - (ic.start + w.pos + 5)))); // TODO: handle 64-bit {abs} with movq_r_l
 		restoreDispatchTableReg();
