@@ -181,11 +181,11 @@ component X86_64Runtime {
 		stack.bind([]); // dummy bind with 0 values to update stack state
 
 		// set up new stack configuration
-		stack = X86_64Stack.!(cont.bottom.parent);
-		stack.state_ = StackState.RUNNING;
-		stack.pushN(vals);
-		stack.push(Value.Ref(cont));
-		stack.rsp += Pointer.SIZE; // pop ret addr
+		curStack = X86_64Stack.!(cont.bottom.parent);
+		curStack.state_ = StackState.RUNNING;
+		curStack.pushN(vals);
+		curStack.push(Value.Ref(cont));
+		curStack.rsp += Pointer.SIZE; // pop ret addr
 		stack.rsp += -Pointer.SIZE; // reserve space for suspend stub addr
 		cont.bottom.parent = null;
 		return null;
