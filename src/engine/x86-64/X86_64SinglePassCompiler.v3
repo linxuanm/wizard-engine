@@ -780,6 +780,7 @@ class X86_64SinglePassCompiler extends SinglePassCompiler {
 		var cont_decl = ContDecl.!(module.heaptypes[cont_id]);
 		if (checkForConstNull(state.peek())) return;
 
+		var vsp = allocTmpFixed(ValueKind.REF, regs.vsp);
 		var top = popReg();
 		var cont = allocTmp(ValueKind.REF);
 		masm.emit_mov_r_r(ValueKind.REF, cont, top.reg);
@@ -788,7 +789,6 @@ class X86_64SinglePassCompiler extends SinglePassCompiler {
 		// transfer params to child stack
 		// XXX: not necessary to store the entire value stack to memory
 		state.emitSaveAll(resolver, SpillMode.SAVE_AND_FREE_REGS);
-		var vsp = allocTmpFixed(ValueKind.REF, regs.vsp);
 		var curStack = allocTmp(ValueKind.REF);
 		var nvals = allocTmp(ValueKind.REF);
 		var tmp0 = allocTmp(ValueKind.REF);
