@@ -120,12 +120,13 @@ class FuncDecl(sig_index: int) extends Decl {
 	def var cur_bytecode: Array<byte>;		// current (potentially instrumented) bytecode
 	def var orig_bytecode: Array<byte>;		// unmodified original bytecode
 	var sidetable = Sidetables.NO_SIDETABLE;	// sidetable, including control transfers
-	var handlers = NO_EX_HANDLERS;
-	var suspend_handlers = NO_EX_HANDLERS;
-	var switch_handlers = NO_EX_HANDLERS;
 	var frame_var_tags: Array<byte>;		// value tags for frame variables
 	var target_code: TargetCode;
 	var tierup_trigger: int = int.max;
+	// XXX: better organization of different type handlers
+	var handlers = NO_EX_HANDLERS;
+	var suspend_handlers = NO_EX_HANDLERS;
+	var switch_handlers = NO_EX_HANDLERS;
 
 	def render(names: NameSection, buf: StringBuilder) -> StringBuilder {
 		var name = if (names != null, names.getFuncName(func_index));
@@ -351,8 +352,7 @@ type Decl2 {
 	case Continuation(index: int);
 }
 
-// Stores {try/catch} information for efficient runtime lookup.
-// This type is reused for {resume/switch}.
+// Stores handler information for efficient runtime lookup.
 type ExHandlerEntry(tag: int, start: int, end: int, info: ExHandlerInfo) #unboxed;
 type ExHandlerInfo {
 	case Direct(handler_pc: int, ex_slot: int, val_stack_top: int, sidetable_pos: int);

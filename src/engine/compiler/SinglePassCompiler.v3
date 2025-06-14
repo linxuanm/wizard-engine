@@ -92,6 +92,7 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 	def state = SpcState.new(regAlloc);
 	// Other state
 	def trap_labels = Vector<(TrapReason, MasmLabel)>.new();
+	var handler_labels = Vector<SpcHandlerInfo>.new();
 	var module: Module;
 	var func: FuncDecl;
 	var sig: SigDecl;
@@ -2631,3 +2632,13 @@ def funcCanInline(decl: FuncDecl) -> InlineConfig {
 }
 
 type InlineConfig(swap_membase: bool, swap_instance: bool, can_inline: bool);
+
+// Used to record the entry point of exception/suspension handlers. Jumping to {stub_label} allows
+// control transfer to its corresponding handler without falling back to fast-int.
+//  
+// The SPC emits a stub at {stub_label} for each handler in the function. The stub restores the
+// expected state of the environment, then jumps to {handler_label} to continue execution at handler.
+//
+// If a handler is never jumped to, then this entry is effectively null and {handler_label == null}.
+// XXX: suspension handler forces a handler stub creation even if never jumped to, improve?
+type SpcHandlerInfo(handler_label: MasmLabel, stub_label: MasmLabel, state: SpcState);
