@@ -92,7 +92,11 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 	def state = SpcState.new(regAlloc);
 	// Other state
 	def trap_labels = Vector<(TrapReason, MasmLabel)>.new();
-	var handler_labels = Vector<SpcHandlerInfo>.new();
+	// handler_loc_map[handler_index] = loc_index
+	// XXX: better organization
+	var handler_loc_map: HashMap<int, int>;
+	// vector of all control blocks reachable from an exception/suspension handling
+	var handler_locs = Vector<SpcHandlerInfo>.new();
 	var module: Module;
 	var func: FuncDecl;
 	var sig: SigDecl;
@@ -144,6 +148,8 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 		sig = func.sig;
 		regAlloc.clear();
 		trap_labels.resize(0);
+		handler_loc_map = HashMap<int, int>.new(int.!, int.==);
+		handler_locs.clear();
 		success = true;
 		osr_offset = -1;
 		osr_state = null;
@@ -915,6 +921,22 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 	def visit_TRY_TABLE(btc: BlockTypeCode, catches: Range<BpCatchCode>) {
 		var pr = btc.toAbstractBlockType(module);
 		state.pushBlock(pr.0, pr.1, masm.newLabel(it.pc));
+
+		// record reachable label positions for handler stub
+		for (i < catches.length) {
+			var catch = catches[i];
+			var control = state.getControl(getCatchCodeLabel(catch));
+			var stub_label = masm.newLabel(it.pc);
+			// handler_labels[control.pc] = SpcHandlerInfo(control.label, , control.copyMerge());
+		}
+	}
+	private def getCatchCodeLabel(catch: BpCatchCode) -> u31 {
+		match (catch) {
+			Catch(tag_index, label) => return label;
+			CatchRef(tag_index, label) => return label;
+			CatchAll(label) => return label;
+			CatchAllRef(label) => return label;
+		}
 	}
 	def emitSelect(valcount: u32) {
 		var sv = pop();
@@ -2043,6 +2065,7 @@ type SpcVal(flags: byte, reg: Reg, const: int) #unboxed {
 
 // An entry in the abstract control stack.
 class SpcControl {
+	var pc: int = -1;
 	var opcode: u16;
 	var params: Array<ValueType>;
 	var results: Array<ValueType>;
@@ -2638,7 +2661,4 @@ type InlineConfig(swap_membase: bool, swap_instance: bool, can_inline: bool);
 //  
 // The SPC emits a stub at {stub_label} for each handler in the function. The stub restores the
 // expected state of the environment, then jumps to {handler_label} to continue execution at handler.
-//
-// If a handler is never jumped to, then this entry is effectively null and {handler_label == null}.
-// XXX: suspension handler forces a handler stub creation even if never jumped to, improve?
-type SpcHandlerInfo(handler_label: MasmLabel, stub_label: MasmLabel, state: SpcState);
+type SpcHandlerInfo(handler_label: MasmLabel, stub_label: MasmLabel, state: Array<SpcVal>);
