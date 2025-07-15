@@ -116,12 +116,11 @@ component X86_64Runtime {
 			.put1("on stack[rsp=0x%x]", stack.rsp - Pointer.NULL).ln();
 
 		// search for handler in continuation
-		var bottom = cont.stack.cont_bottom;
 		match (cont.stack.throw(ex)) {
 			Handled(handler) => {
 				X86_64Stack.!(handler).state_ = StackState.RESUMABLE;
+				handler.cont_bottom = cont.stack.cont_bottom;
 				cont.stack = handler;
-				handler.cont_bottom = bottom;
 				stack.push(Value.Ref(cont));
 				return null;
 			}
