@@ -58,6 +58,10 @@ class WasmStack extends ExecStack {
 	// Denotes the bottom stack of a suspended continuation (with {this} as the top stack).
 	// Should be set when {state() == SUSPENDED}, and {null} otherwise.
 	var cont_bottom: WasmStack;
+	// Denotes the current "version" of a stack. This is recorded by a {Continuation} on its creation
+	// and updated everytime a continuation (which is copy-by-value) of this stack is consumed.
+	// A {Continuation} is only valid if its version matches the stack's version.
+	var version: u32 = 0;
 
 	// Gets the state of this stack.
 	def state() -> StackState;
