@@ -48,6 +48,7 @@ component X86_64WhammTrampoline {
 							kind = ValueKind.V128.code;
 						}
 						Ref(val) => { low = u64.view(Pointer.atObject(val) - Pointer.NULL); kind = ValueKind.REF.code; }
+						Cont(cont) => { low = u64.view(Pointer.atObject(cont.stack) - Pointer.NULL); kind = ValueKind.REF.code; }
 					}
 					masm.emit_mov_m_d(slot_addr, low);
 					if (is_v128) {
