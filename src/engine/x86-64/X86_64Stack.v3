@@ -560,6 +560,7 @@ class X86_64Stack extends WasmStack {
 			).ln();
 		}
 		return Value.Ref(obj);
+	}
 	def popResult(rt: Array<ValueType>) -> Result {
 		var r = Array<Value>.new(rt.length);
 		for (i = r.length - 1; i >= 0; i--) r[i] = pop(rt[i]);
