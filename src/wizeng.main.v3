@@ -81,6 +81,9 @@ def main(args: Array<string>) -> int {
 	var wasmFiles = wasm.extract();
 	var wastFiles = wast.extract();
 	var exit_code = 0;
+
+	// [rv]: revisit
+	Target.getHostObjectGuardBytes = fun obj => 42;
 	
 	if (wasmFiles.length > 0) {
 		if (WizengModes.runWasm == null) return ErrorBuilder.new()
