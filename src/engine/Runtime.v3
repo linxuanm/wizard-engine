@@ -456,6 +456,7 @@ def bytesToVals(storage: StorageType, data: Array<byte>, offset: u32, length: u3
 }
 def sizeOfStorage(storage: StorageType) -> u32 {
 	match (storage.pack) {
+		// [rv]: ask
 		UNPACKED => {
 			match (storage.valtype) {
 				I32, F32 => return 4;
