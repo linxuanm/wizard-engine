@@ -11,6 +11,10 @@ component SpectestMode {
 	def EXPECTED = group.newPathOption("expected", null, "File containing expected failures to be ignored.")
 		.onSet(TestUtil.loadExpectedFile(expected, _));
 	
+	// [rv]: reorganize
+	def gen = U64Generator.new(114514);
+	private def getGuard(obj: HostObject) -> u64 { return NumberedObject.!(obj).guard; }
+
 	new() {
 		WizengModes.runWast = run;
 	}
@@ -21,6 +25,9 @@ component SpectestMode {
 		OUT.puts("##>");
 		OUT.putd(files.length);
 		OUT.ln();
+
+		// [rv]: reorganize
+		Target.getHostObjectGuardBytes = getGuard;
 
 		var result = 0;
 		for (f in files) result |= runTest(engine, monitors, f);
@@ -82,8 +89,19 @@ component SpectestMode {
 
 	def makeExternRef(cache: Vector<HostObject>, i: int) -> HostObject {
 		if (i >= cache.length || cache[i] == null) {
-			cache.set(i, NumberedObject.new(i));
+			var obj = NumberedObject.new(i);
+			obj.guard = gen.next();
+			cache.set(i, obj);
 		}
 		return cache[i];
+	}
+}
+
+// Helper class for generating externref guards when {TestFeature.wideExtRef == true}.
+class U64Generator(seed: u64) {
+	var curr = seed;
+	def next() -> u64 {
+		curr = 9007199254740881ul * curr + 10039;
+		return curr;
 	}
 }
