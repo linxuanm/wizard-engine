@@ -185,7 +185,7 @@ class X86_64Stack extends WasmStack {
 		}
 		// Increment by {Pointer.SIZE} to skip the return address pushed by {resume}.
 		var frame = TargetFrame(rsp + Pointer.SIZE);
-		var accessor = frame.getFrameAccessor();
+		var accessor = frame.getFrameAccessorOfStack(this);
 		var func = accessor.func();
 		var handler = func.decl.findSuspensionHandler(func.instance, tag, accessor.pc());
 		if (handler.handler_pc < 0) { // not found
