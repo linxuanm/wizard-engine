@@ -6,14 +6,14 @@ component Debug {
 	// Debug tracing options.
 	def paranoid = false;
 	def verbose = false;
-	def interpreter = true;
+	def interpreter = false;
 	def runtime = false;
 	def compiler = false;
 	def pregen = false;
-	def stack = true;
+	def stack = false;
 	def memory = false;
 	def diagnostic = false;
-	def compression = true;
+	def compression = false;
 
 	// Prevents arguments from being dead-code-eliminated.
 	def keepAlive<T>(x: T) { }
