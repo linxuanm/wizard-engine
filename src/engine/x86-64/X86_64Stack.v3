@@ -477,14 +477,6 @@ class X86_64Stack extends WasmStack {
 		if (!valuerep.tagged) fatal("untyped frame access requires value tagging to be enabled");
 		var tp = base + offset * valuerep.slot_size;
 
-		// TODO[rv]: remove trace
-		// Trace.OUT.put2(
-		// 	"stack=0x%x curStack=0x%x",
-		// 	Pointer.atObject(this) - Pointer.NULL,
-		// 	Pointer.atObject(X86_64Runtime.curStack) - Pointer.NULL
-		// ).ln();
-		Trace.OUT.put2("mem=%q base=0x%x", mapping.range.render, base - Pointer.NULL).ln();
-
 		if (!mapping.range.contains(base)) System.error("FrameAccessError", "base out of bounds");
 		if (!mapping.range.contains(tp)) System.error("FrameAccessError", "out of bounds");
 		var vp = tp + valuerep.tag_size;
@@ -623,12 +615,6 @@ component X86_64Stacks {
 	def getFrameAccessorOfStack(sp: Pointer, stack: X86_64Stack) -> X86_64FrameAccessor {
 		var retip = (sp + -RETADDR_SIZE).load<Pointer>();
 		var code = RiRuntime.findUserCode(retip);
-
-		// TODO[rv]: remove trace
-		Trace.OUT.put1(
-			"in getFrameAccessor: ",
-			Pointer.atObject(X86_64Runtime.curStack) - Pointer.NULL
-		).ln();
 		match (code) {
 			x: X86_64InterpreterCode => {
 				var prev = (sp + X86_64InterpreterFrame.accessor.offset).load<X86_64FrameAccessor>();

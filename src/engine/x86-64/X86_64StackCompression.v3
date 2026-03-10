@@ -83,7 +83,6 @@ component X86_64Compression {
 			for (i < f.n_vals) to.push(from.values[val_offset + i]);
 			(to.rsp + X86_64InterpreterFrame.vsp.offset).store<Pointer>(to.vsp); // Store %vsp.
 
-			// TODO[rv]: maybe setNewprogramLocation set vsp AFTER the locals?
 			if (Debug.compression) {
 				var vfp_ptr = to.rsp + X86_64InterpreterFrame.vfp.offset - Pointer.NULL;
 				var vfp_val = (to.rsp + X86_64InterpreterFrame.vfp.offset).load<Pointer>() - Pointer.NULL;
@@ -158,13 +157,6 @@ class CompressedStackBuilder {
 		var func = accessor.func();
 		var pc = accessor.pc();
 
-		// TODO[rv]: remove trace
-		Trace.OUT.put2(
-			"stack=0x%x curStack=0x%x",
-			Pointer.atObject(accessor.stack) - Pointer.NULL,
-			Pointer.atObject(X86_64Runtime.curStack) - Pointer.NULL
-		).ln();
-
 		var n_locals = accessor.numLocals();
 		var n_operands = accessor.numOperands();
 		var n_vals = n_locals + n_operands;
@@ -174,7 +166,6 @@ class CompressedStackBuilder {
 
 		frames.put(CompressedFrame(func, pc, n_vals, ret_addr));
 
-		// TODO[rv]: remove trace
 		if (Debug.compression) {
 			var vfp_ptr = accessor.sp + X86_64InterpreterFrame.vfp.offset - Pointer.NULL;
 			var vfp_val = accessor.vfp() - Pointer.NULL;
