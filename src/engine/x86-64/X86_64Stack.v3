@@ -33,7 +33,7 @@ class X86_64Stack extends WasmStack {
 		}
 		clear();
 		if (valuerep.tagged) RiGc.registerScanner(this, X86_64Stack.scan);
-		if (Trace.stack && Debug.stack) Trace.OUT.put2("newStack start=0x%x, end=0x%x", mapping.range.start - Pointer.NULL, mapping.range.end - Pointer.NULL).ln();
+		if (Debug.stack) Trace.OUT.put2("newStack start=0x%x, end=0x%x", mapping.range.start - Pointer.NULL, mapping.range.end - Pointer.NULL).ln();
 	}
 	// Gets the state of this stack.
 	def state() -> StackState {
@@ -476,6 +476,16 @@ class X86_64Stack extends WasmStack {
 		// TODO: correctly tag the REF_U64 storage kind (requires typed REF_NULL loads).
 		if (!valuerep.tagged) fatal("untyped frame access requires value tagging to be enabled");
 		var tp = base + offset * valuerep.slot_size;
+
+		// TODO[rv]: remove trace
+		// Trace.OUT.put2(
+		// 	"stack=0x%x curStack=0x%x",
+		// 	Pointer.atObject(this) - Pointer.NULL,
+		// 	Pointer.atObject(X86_64Runtime.curStack) - Pointer.NULL
+		// ).ln();
+		Trace.OUT.put2("mem=%q base=0x%x", mapping.range.render, base - Pointer.NULL).ln();
+
+		if (!mapping.range.contains(base)) System.error("FrameAccessError", "base out of bounds");
 		if (!mapping.range.contains(tp)) System.error("FrameAccessError", "out of bounds");
 		var vp = tp + valuerep.tag_size;
 		var tag = tp.load<u8>() & '\x7F';
@@ -610,16 +620,22 @@ def G = X86_64MasmRegs.toGpr, X = X86_64MasmRegs.toXmmr;
 component X86_64Stacks {
 	var RESUME_STUB_POINTER: Pointer;
 
-	def getFrameAccessor(sp: Pointer) -> X86_64FrameAccessor {
+	def getFrameAccessorOfStack(sp: Pointer, stack: X86_64Stack) -> X86_64FrameAccessor {
 		var retip = (sp + -RETADDR_SIZE).load<Pointer>();
 		var code = RiRuntime.findUserCode(retip);
+
+		// TODO[rv]: remove trace
+		Trace.OUT.put1(
+			"in getFrameAccessor: ",
+			Pointer.atObject(X86_64Runtime.curStack) - Pointer.NULL
+		).ln();
 		match (code) {
 			x: X86_64InterpreterCode => {
 				var prev = (sp + X86_64InterpreterFrame.accessor.offset).load<X86_64FrameAccessor>();
 				if (prev != null) return prev;
 				// Interpreter frames store the {WasmFunction} _and_ {FuncDecl}.
 				var decl = (sp + X86_64InterpreterFrame.func_decl.offset).load<FuncDecl>();
-				var n = X86_64FrameAccessor.new(X86_64Runtime.curStack, sp, decl);
+				var n = X86_64FrameAccessor.new(stack, sp, decl);
 				(sp + X86_64InterpreterFrame.accessor.offset).store<X86_64FrameAccessor>(n);
 				return n;
 			}
@@ -629,13 +645,19 @@ component X86_64Stacks {
 				// SPC frames only store the {WasmFunction}.
 				var wf = (sp + X86_64InterpreterFrame.wasm_func.offset).load<WasmFunction>();
 				// TODO: assert wf.decl == x.decl()
-				var n = X86_64FrameAccessor.new(X86_64Runtime.curStack, sp, wf.decl);
+				var n = X86_64FrameAccessor.new(stack, sp, wf.decl);
 				(sp + X86_64InterpreterFrame.accessor.offset).store<X86_64FrameAccessor>(n);
 				return n;
 			}
 		}
 		return null;
 	}
+
+	// TODO[cleanup]: defaulting to {curStack} should be deprecated with stack-switching
+	def getFrameAccessor(sp: Pointer) -> X86_64FrameAccessor {
+		return getFrameAccessorOfStack(sp, X86_64Runtime.curStack);
+	}
+
 	def traceIpAndSp(ip: Pointer, sp: Pointer, out: Range<byte> -> void) {
 		var buf = X86_64Runtime.globalFrameDescriptionBuf;
 		buf.put2("\t@[ip=0x%x, sp=0x%x] ", ip - Pointer.NULL, sp - Pointer.NULL).send(out);
@@ -1137,7 +1159,7 @@ class X86_64FrameAccessor(stack: X86_64Stack, sp: Pointer, decl: FuncDecl) exten
 		var st_ptr = if(stp == st_entries.length, Pointer.atContents(st_entries), Pointer.atElement(func.sidetable.entries, stp));
 		(sp + X86_64InterpreterFrame.stp.offset)	.store<Pointer>(st_ptr);
 	}
-	private def vfp() -> Pointer {
+	def vfp() -> Pointer {
 		return (sp + X86_64InterpreterFrame.vfp.offset).load<Pointer>();
 	}
 	private def set_vsp(p: Pointer) {

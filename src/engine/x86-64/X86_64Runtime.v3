@@ -136,6 +136,12 @@ component X86_64Runtime {
 	// the handler stack.
 	def runtime_handle_suspend(stack: X86_64Stack, instance: Instance, tag_id: u31) -> Throwable {
 		// TODO[sc]: remove this check
+		// PROBLEM[rv]: suspension materializes accessor when runtime.curstack is set to a mismatched one
+		Trace.OUT.put2(
+			"suspending on stack=0x%x, rsp=0x%x",
+			Pointer.atObject(stack) - Pointer.NULL,
+			stack.rsp - Pointer.NULL
+		).ln();
 		var old_parent = stack.parent;
 		var compressed = X86_64Compression.compress(stack);
 		X86_64Compression.decompress(stack, compressed);

@@ -38,6 +38,7 @@ component X86_64Compression {
 		}
 
 		collector.reset();
+		builder.reset();
 		stack.walk<void>(collector.visitFrame, void, stack.rsp, false);
 		for (i = collector.frames.length - 1; i >= 0; i--) builder.addFrame(collector.frames[i]);
 
@@ -81,6 +82,13 @@ component X86_64Compression {
 			(to.rsp + X86_64InterpreterFrame.vfp.offset).store<Pointer>(to.vsp); // Store %vfp.
 			for (i < f.n_vals) to.push(from.values[val_offset + i]);
 			(to.rsp + X86_64InterpreterFrame.vsp.offset).store<Pointer>(to.vsp); // Store %vsp.
+
+			// TODO[rv]: maybe setNewprogramLocation set vsp AFTER the locals?
+			if (Debug.compression) {
+				var vfp_ptr = to.rsp + X86_64InterpreterFrame.vfp.offset - Pointer.NULL;
+				var vfp_val = (to.rsp + X86_64InterpreterFrame.vfp.offset).load<Pointer>() - Pointer.NULL;
+				Trace.OUT.put2("vfp (at decompression) *(0x%x) = 0x%x", vfp_ptr, vfp_val).ln();
+			}
 
 			// Store recorded machine address as retip.
 			to.rsp += -Pointer.SIZE;
@@ -144,10 +152,18 @@ class CompressedStackBuilder {
 	def frames = Vector<CompressedFrame>.new();
 	def values = Vector<Value>.new();
 
+	def reset() { frames.clear(); values.clear(); }
 	def addFrame(frame: TargetFrame) {
 		var accessor = frame.getFrameAccessor();
 		var func = accessor.func();
 		var pc = accessor.pc();
+
+		// TODO[rv]: remove trace
+		Trace.OUT.put2(
+			"stack=0x%x curStack=0x%x",
+			Pointer.atObject(accessor.stack) - Pointer.NULL,
+			Pointer.atObject(X86_64Runtime.curStack) - Pointer.NULL
+		).ln();
 
 		var n_locals = accessor.numLocals();
 		var n_operands = accessor.numOperands();
@@ -157,6 +173,13 @@ class CompressedStackBuilder {
 		var ret_addr = (frame.sp + (-Pointer.SIZE)).load<Pointer>();
 
 		frames.put(CompressedFrame(func, pc, n_vals, ret_addr));
+
+		// TODO[rv]: remove trace
+		if (Debug.compression) {
+			var vfp_ptr = accessor.sp + X86_64InterpreterFrame.vfp.offset - Pointer.NULL;
+			var vfp_val = accessor.vfp() - Pointer.NULL;
+			Trace.OUT.put2("vfp (at compression) *(0x%x) = 0x%x", vfp_ptr, vfp_val).ln();
+		}
 		for (i < n_locals) values.put(accessor.getLocal(i));
 		for (i < n_operands) values.put(accessor.getOperand(i - n_operands + 1));
 	}
