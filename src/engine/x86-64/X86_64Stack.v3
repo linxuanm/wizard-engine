@@ -1054,6 +1054,13 @@ class X86_64FrameAccessor(stack: X86_64Stack, sp: Pointer, decl: FuncDecl) exten
 		var vfp = (sp + X86_64InterpreterFrame.vfp.offset).load<Pointer>();
 		return stack.readValue(vfp, i);
 	}
+	// Get the value at {vfp + i}.
+	// XXX: refactor
+	def getValue(i: int) -> Value {
+		checkNotUnwound();
+		var vfp = (sp + X86_64InterpreterFrame.vfp.offset).load<Pointer>();
+		return stack.readValue(vfp, i);
+	}
 	// Get the value of frame variable {i}.
 	def getFrameVar(i: int) -> Value {
 		checkNotUnwound();

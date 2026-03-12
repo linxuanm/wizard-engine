@@ -1,6 +1,8 @@
 // Copyright 2025 Wizard authors. All rights reserved.
 // See LICENSE for details of Apache 2.0 license.
 
+def valuerep = Target.tagging;
+
 // Represents a compressed frame.
 // {ret_addr} is a pointer into the code of {func}.
 // TODO: make it more compact
@@ -40,7 +42,13 @@ component X86_64Compression {
 		collector.reset();
 		builder.reset();
 		stack.walk<void>(collector.visitFrame, void, stack.rsp, false);
-		for (i = collector.frames.length - 1; i >= 0; i--) builder.addFrame(collector.frames[i]);
+		for (i = collector.frames.length - 1; i >= 0; i--) {
+			var next_vfp = stack.vsp;
+			if (i != 0) {
+				next_vfp = collector.frames[i-1].getFrameAccessor().vfp();
+			}
+			builder.addFrame(collector.frames[i], next_vfp);
+		}
 
 		var compressed = X86_64CompressedStack.new();
 		builder.build(compressed);
@@ -152,27 +160,28 @@ class CompressedStackBuilder {
 	def values = Vector<Value>.new();
 
 	def reset() { frames.clear(); values.clear(); }
-	def addFrame(frame: TargetFrame) {
+	def addFrame(frame: TargetFrame, next_vfp: Pointer) {
 		var accessor = frame.getFrameAccessor();
 		var func = accessor.func();
 		var pc = accessor.pc();
 
-		var n_locals = accessor.numLocals();
-		var n_operands = accessor.numOperands();
-		var n_vals = n_locals + n_operands;
-
 		// XXX: a neater way to access ret_addr pointer?
 		var ret_addr = (frame.sp + (-Pointer.SIZE)).load<Pointer>();
-
-		frames.put(CompressedFrame(func, pc, n_vals, ret_addr));
 
 		if (Debug.compression) {
 			var vfp_ptr = accessor.sp + X86_64InterpreterFrame.vfp.offset - Pointer.NULL;
 			var vfp_val = accessor.vfp() - Pointer.NULL;
 			Trace.OUT.put2("vfp (at compression) *(0x%x) = 0x%x", vfp_ptr, vfp_val).ln();
 		}
-		for (i < n_locals) values.put(accessor.getLocal(i));
-		for (i < n_operands) values.put(accessor.getOperand(i - n_operands + 1));
+		
+		var offset = 0;
+		for (this_vfp = accessor.vfp(); this_vfp < next_vfp; this_vfp += valuerep.slot_size) {
+			var value = accessor.getValue(offset);
+			values.put(value);
+			offset++;
+		}
+
+		frames.put(CompressedFrame(func, pc, offset, ret_addr));
 	}
 
 	def build(to: X86_64CompressedStack) {
