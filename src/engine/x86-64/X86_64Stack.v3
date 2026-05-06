@@ -36,7 +36,7 @@ class X86_64Stack extends WasmStack {
 		}
 		clear();
 		if (valuerep.tagged) RiGc.registerScanner(this, X86_64Stack.scan);
-		if (Trace.stack && Debug.stack) Trace.OUT.put2("newStack start=0x%x, end=0x%x", mapping.range.start - Pointer.NULL, mapping.range.end - Pointer.NULL).ln();
+		if (Debug.stack) Trace.OUT.put2("newStack start=0x%x, end=0x%x", mapping.range.start - Pointer.NULL, mapping.range.end - Pointer.NULL).ln();
 	}
 	// Gets the state of this stack.
 	def state() -> StackState {
@@ -477,9 +477,15 @@ class X86_64Stack extends WasmStack {
 		code.scanFrame(ip, pos.frame.sfp);
 		return true;
 	}
+	// XXX: If you ever get a nonsensical stacktrace (i.e., non-contiguous, untraceble
+	// call stack) where a virtual call on a value returned by {X86_64Stack.readValue}
+	// shows up somewhere in it, it's almost certainly the REF <=> REF_U64 tag coercion.
 	def readValue(base: Pointer, offset: int) -> Value {
+		// TODO: correctly tag the REF_U64 storage kind (requires typed REF_NULL loads).
 		if (!valuerep.tagged) fatal("untyped frame access requires value tagging to be enabled");
 		var tp = base + offset * valuerep.slot_size;
+
+		if (!mapping.range.contains(base)) System.error("FrameAccessError", "base out of bounds");
 		if (!mapping.range.contains(tp)) System.error("FrameAccessError", "out of bounds");
 		var vp = tp + valuerep.tag_size;
 		var tag = tp.load<u8>() & '\x7F';
@@ -492,6 +498,7 @@ class X86_64Stack extends WasmStack {
 			BpTypeCode.NULLEXTERNREF.code,
 			BpTypeCode.I31REF.code => return readI31OrObject(vp);
 
+			// TODO: check if nullref needs REF_U64 coercion
 			BpTypeCode.STRUCTREF.code,
 			BpTypeCode.NULLREF.code,
 			BpTypeCode.ARRAYREF.code,
