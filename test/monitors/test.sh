@@ -22,16 +22,17 @@ cd $HERE
 if [ $# -gt 0  ]; then
     MONITORS=($@)
 else
-    MONITORS=("loops" "loops{c}" 
-        "coverage" "coverage{c}" "coverage{i}" 
-        "calls" 
-        "branches" "branches{c}" 
+    MONITORS=("loops" "loops{c}"
+        "coverage" "coverage{c}" "coverage{i}"
+        "calls"
+        "branches" "branches{c}"
         "hotness" "hotness{c}"
-        "globals" 
+        "globals"
         "profile_bytecode{switch_size=16}"
         "profile_bytecode{switch_size=7,abstract_interpreter=false}"
         "profile_bytecode{switch_size=7,abstract_interpreter=true}"
-	      "alloc")
+	    "alloc"
+        "ssinstr")
 fi
 
 TESTS=$(ls *.wasm)
