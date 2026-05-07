@@ -125,15 +125,20 @@ class GlobalDispatchProbe(state: MonitorState, funcSites: HashMap<FuncDecl, Arra
 	}
 }
 
-// BytecodeVisitor that records per-PC SwitchSites for one function.
-class SiteVisitor(monitor: StackSwitchInstrMonitor, module: Module) extends BytecodeVisitor {
-	var func: FuncDecl;
-	var bi: BytecodeIterator;
+// Records per-PC SwitchSites for each function.
+class SiteVisitor extends BytecodeInstrumenter {
+	def monitor: StackSwitchInstrMonitor;
 	var pcSites: Array<SwitchSite>;
 
+	new(monitor, module: Module) super(module) { }
+	def onFunc(func: FuncDecl) { pcSites = null; }
+
 	private def addSite(op: StackSwitchOpcode, tag: int) {
-		if (pcSites == null) pcSites = Array<SwitchSite>.new(func.orig_bytecode.length);
-		var site = SwitchSite.new(module, func, bi.pc, op, tag);
+		if (pcSites == null) {
+			pcSites = Array<SwitchSite>.new(bi.func.orig_bytecode.length);
+			monitor.funcSites[bi.func] = pcSites;
+		}
+		var site = SwitchSite.new(module, bi.func, bi.pc, op, tag);
 		pcSites[bi.pc] = site;
 		monitor.state.sites.put(site);
 	}
@@ -153,21 +158,7 @@ class StackSwitchInstrMonitor extends Monitor {
 
 	def onParse(m: Module, err: ErrorGen) {
 		lastModule = m;
-		var visitor = SiteVisitor.new(this, m);
-		var bi = BytecodeIterator.new();
-		visitor.bi = bi;
-		for (i < m.functions.length) {
-			var f = m.functions[i];
-			if (f.imp != null) continue;
-			visitor.func = f;
-			visitor.pcSites = null;
-			bi.reset(f);
-			while (bi.more()) {
-				bi.dispatch(visitor);
-				bi.next();
-			}
-			if (visitor.pcSites != null) funcSites[f] = visitor.pcSites;
-		}
+		SiteVisitor.new(this, m).run();
 		if (!globalProbeRegistered) {
 			Instrumentation.insertGlobalProbe(GlobalDispatchProbe.new(state, funcSites));
 			globalProbeRegistered = true;
