@@ -22,6 +22,26 @@ def bucketOf(v: u64) -> int {
 	return 1 + Ints.log(u32.view(v));
 }
 
+// Static layout for the per-site hotness and tag hotness tables.
+def siteTable = initSiteTable();
+def initSiteTable() -> TraceTable {
+	var t = TraceTable.new(["Function", "PC", "Opcode", "Tag", "Count"]);
+	t.cells[0].set(28, Justification.LEFT,  Color.FUNC);
+	t.cells[1].set(6,  Justification.RIGHT, Color.LINE);
+	t.cells[2].set(20, Justification.LEFT,  Color.NONE);
+	t.cells[3].set(8,  Justification.RIGHT, Color.NONE);
+	t.cells[4].set(14, Justification.RIGHT, Color.COUNT);
+	return t;
+}
+def tagTable = initTagTable();
+def initTagTable() -> TraceTable {
+	var t = TraceTable.new(["Tag", "SuspendCount", "SwitchCount"]);
+	t.cells[0].set(28, Justification.LEFT,  Color.NONE);
+	t.cells[1].set(14, Justification.RIGHT, Color.COUNT);
+	t.cells[2].set(14, Justification.RIGHT, Color.COUNT);
+	return t;
+}
+
 class SwitchSite(module: Module, func: FuncDecl, pc: int, op: StackSwitchOpcode, tag: int) {
 	var count: u64;
 }
@@ -196,23 +216,17 @@ def reportText(out: TraceBuilder, state: MonitorState, module: Module) {
 	out.beginColor(Color.UNDERLINE).puts("ssinstr: per-site hotness").endColors().ln();
 	var sitesArr = state.sites.copy();
 	sitesArr = Arrays.sort(sitesArr, 0, sitesArr.length, siteCompare);
-	var t2 = TraceTable.new(["Function", "PC", "Opcode", "Tag", "Count"]);
-	t2.cells[0].set(28, Justification.LEFT, Color.FUNC);
-	t2.cells[1].set(6, Justification.RIGHT, Color.LINE);
-	t2.cells[2].set(20, Justification.LEFT, Color.NONE);
-	t2.cells[3].set(8, Justification.RIGHT, Color.NONE);
-	t2.cells[4].set(14, Justification.RIGHT, Color.COUNT);
-	t2.putTableHeader(out);
+	siteTable.putTableHeader(out);
 	out.flush();
 	for (s in sitesArr) {
 		var nameSection = if (s.module != null, s.module.names);
-		s.func.render(nameSection, t2.cells[0]);
-		t2.cells[1].put1("+%d", s.pc);
-		t2.cells[2].puts(s.op.mnemonic);
-		if (s.tag >= 0) t2.cells[3].putd(s.tag);
-		else t2.cells[3].puts("-");
-		t2.cells[4].putd(s.count);
-		t2.putTableRow(out);
+		s.func.render(nameSection, siteTable.cells[0]);
+		siteTable.cells[1].put1("+%d", s.pc);
+		siteTable.cells[2].puts(s.op.mnemonic);
+		if (s.tag >= 0) siteTable.cells[3].putd(s.tag);
+		else siteTable.cells[3].puts("-");
+		siteTable.cells[4].putd(s.count);
+		siteTable.putTableRow(out);
 		out.flush();
 	}
 	out.ln();
@@ -226,17 +240,13 @@ def reportText(out: TraceBuilder, state: MonitorState, module: Module) {
 	} else {
 		var tagArr = tagList.copy();
 		tagArr = Arrays.sort(tagArr, 0, tagArr.length, tagCompare);
-		var t3 = TraceTable.new(["Tag", "SuspendCount", "SwitchCount"]);
-		t3.cells[0].set(28, Justification.LEFT, Color.NONE);
-		t3.cells[1].set(14, Justification.RIGHT, Color.COUNT);
-		t3.cells[2].set(14, Justification.RIGHT, Color.COUNT);
-		t3.putTableHeader(out);
+		tagTable.putTableHeader(out);
 		out.flush();
 		for (tc in tagArr) {
-			renderTagName(t3.cells[0], tc.tag);
-			t3.cells[1].putd(tc.suspend_count);
-			t3.cells[2].putd(tc.switch_count);
-			t3.putTableRow(out);
+			renderTagName(tagTable.cells[0], tc.tag);
+			tagTable.cells[1].putd(tc.suspend_count);
+			tagTable.cells[2].putd(tc.switch_count);
+			tagTable.putTableRow(out);
 			out.flush();
 		}
 	}
