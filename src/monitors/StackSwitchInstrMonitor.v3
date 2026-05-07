@@ -251,7 +251,7 @@ def reportText(out: TraceBuilder, state: MonitorState, module: Module) {
 	// S: gap distribution.
 	out.beginColor(Color.UNDERLINE).puts("ssinstr: gap distribution (instrs between switch ops)").endColors().ln();
 	if (state.gapEvents == 0) {
-		out.puts("  (fewer than two switch ops fired; no gaps recorded)").ln();
+		out.puts("  (fewer than two switch ops fired; no gaps recorded)").ln().ln();
 		return;
 	}
 	out.put1("events: %d", state.gapEvents);
