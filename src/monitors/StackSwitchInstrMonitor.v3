@@ -14,18 +14,12 @@ enum StackSwitchOpcode(mnemonic: string) {
 	SWITCH		("switch")
 }
 
-def funcHash(f: FuncDecl) -> int { return f.func_index; }
-def funcEq(a: FuncDecl, b: FuncDecl) -> bool { return a == b; }
-def tagHash(t: TagDecl) -> int { return t.tag_index; }
-def tagEq(a: TagDecl, b: TagDecl) -> bool { return a == b; }
-
-// Buckets for power of 2 histogram for gap recording.
+// Buckets for power of 2 histogram. Tests for overflow on `Ints.log` which uses u32.
 def NUM_BUCKETS = 33;
 def bucketOf(v: u64) -> int {
 	if (v == 0) return 0;
-	var b = 0, x = v;
-	while (x > 0) { x >>= 1; b++; }
-	return if(b > NUM_BUCKETS - 1, NUM_BUCKETS, b);
+	if ((v >> 32) != 0) return NUM_BUCKETS - 1;
+	return 1 + Ints.log(u32.view(v));
 }
 
 class SwitchSite(module: Module, func: FuncDecl, pc: int, op: StackSwitchOpcode, tag: int) {
@@ -62,7 +56,7 @@ class MonitorState {
 	var gapMax: u64;
 	var gapEvents: u64;
 	def perOp = Array<u64>.new(5);
-	def tagCounts = HashMap<TagDecl, TagCounts>.new(tagHash, tagEq);
+	def tagCounts = HashMap<TagDecl, TagCounts>.new(TagDecl.tag_index, TagDecl.==);
 	def sites = Vector<SwitchSite>.new();
 
 	def recordGap(g: u64) {
@@ -133,7 +127,7 @@ class SiteVisitor(monitor: StackSwitchInstrMonitor, module: Module) extends Byte
 
 class StackSwitchInstrMonitor extends Monitor {
 	def state = MonitorState.new();
-	def funcSites = HashMap<FuncDecl, Array<SwitchSite>>.new(funcHash, funcEq);
+	def funcSites = HashMap<FuncDecl, Array<SwitchSite>>.new(FuncDecl.func_index, FuncDecl.==);
 	var globalProbeRegistered: bool;
 	var lastModule: Module;
 
