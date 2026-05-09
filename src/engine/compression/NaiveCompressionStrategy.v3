@@ -15,10 +15,4 @@ class NaiveCompressionStrategy extends CompressionStrategy<NaiveCompressedStack>
 
 class NaiveCompressedStack extends CompressedStack {
 	var frames: Array<RelocatableFrame>;
-
-	def render(buf: StringBuilder) -> StringBuilder {
-		buf.put1("NaiveCompressedStack(n_frames=%d):", frames.length).ln();
-		for (frame in frames) buf.put1("  %q", frame.render).ln();
-		return buf;
-	}
 }
