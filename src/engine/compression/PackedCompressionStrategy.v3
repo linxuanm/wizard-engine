@@ -1,7 +1,7 @@
 // Copyright 2025 Wizard authors. All rights reserved.
 // See LICENSE for details of Apache 2.0 license.
 
-type FrameHeader(func: WasmFunction, pc: int, is_spc: bool, reentry: u64, bytecode_ip: u64, n_vals: int) #unboxed {
+type FrameHeader(func: WasmFunction, pc: int, is_spc: bool, ret_addr: u64, bytecode_ip: u64, n_vals: int) #unboxed {
 
 	def render(buf: StringBuilder) -> StringBuilder {
 		return buf.put3("Frame(func=%d, pc=%d, n_vals=%d)", func.decl.func_index, pc, n_vals);
@@ -37,9 +37,9 @@ class PackedCompressionStrategy extends CompressionStrategy<PackedCompressedStac
 
 	def compress(frames: Range<RelocatableFrame>) -> PackedCompressedStack {
 		for (frame in frames) {
-			var header = FrameHeader(frame.func, frame.pc, frame.is_spc, frame.reentry, frame.bytecode_ip, frame.vals.length);
+			var header = FrameHeader(frame.data.func, frame.data.pc, frame.is_spc, frame.data.ret_addr, frame.bytecode_ip, frame.data.vals.length);
 			frames_builder.put(header);
-			for (v in frame.vals) writeValue(v);
+			for (v in frame.data.vals) writeValue(v);
 		}
 
 		// XXX: reuse stack (maybe pass one in?)
@@ -76,7 +76,7 @@ class PackedCompressionStrategy extends CompressionStrategy<PackedCompressedStac
 		for (header in comp.frames) {
 			var vals = Array<Value>.new(header.n_vals);
 			for (i < header.n_vals) vals[i] = readValue(comp);
-			builder.put(RelocatableFrame(header.func, header.pc, header.is_spc, header.reentry, header.bytecode_ip, vals));
+			builder.put(RelocatableFrame(WasmFrameData(header.func, header.pc, header.ret_addr, vals), header.is_spc, header.bytecode_ip));
 		}
 		return builder.extract();
 	}

@@ -1,9 +1,9 @@
 // Copyright 2025 Wizard authors. All rights reserved.
 // See LICENSE for details of Apache 2.0 license.
 
-// Generalized- relocatable representation of a stack frame that can be serialized.
-// {bytecode_ip} is unused when {is_spc} is true.
-type RelocatableFrame(func: WasmFunction, pc: int, is_spc: bool, reentry: u64, bytecode_ip: u64, vals: Array<Value>) #unboxed {
+// Conceptual runtime data of a Wasm frame at a moment in time.
+// {ret_addr} is the address execution returns to when the frame above pops.
+type WasmFrameData(func: WasmFunction, pc: int, ret_addr: u64, vals: Array<Value>) #unboxed {
 
 	def render(buf: StringBuilder) -> StringBuilder {
 		// Frame header.
@@ -16,6 +16,15 @@ type RelocatableFrame(func: WasmFunction, pc: int, is_spc: bool, reentry: u64, b
 			for (v in vals) Values.render(v, buf).puts(" ");
 		}
 		return buf;
+	}
+}
+
+// Relocatable representation of a stack frame that can be serialized.
+// {bytecode_ip} is unused when {is_spc} is true.
+type RelocatableFrame(data: WasmFrameData, is_spc: bool, bytecode_ip: u64) #unboxed {
+
+	def render(buf: StringBuilder) -> StringBuilder {
+		return data.render(buf);
 	}
 }
 

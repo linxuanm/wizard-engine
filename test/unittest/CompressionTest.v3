@@ -79,7 +79,7 @@ class CompressionTester(t: Tester, adapter: CompressionStrategyAdapter) {
 
 	def make_frame(pc: int, vals: Array<Value>) -> RelocatableFrame {
 		var func = getDummyFunc();
-		return RelocatableFrame(func, pc, false, DUMMY_REENTRY, DUMMY_REENTRY, vals);
+		return RelocatableFrame(WasmFrameData(func, pc, DUMMY_REENTRY, vals), false, DUMMY_REENTRY);
 	}
 
 	def roundtrip(frames: Array<RelocatableFrame>) -> Array<RelocatableFrame> {
@@ -90,7 +90,7 @@ class CompressionTester(t: Tester, adapter: CompressionStrategyAdapter) {
 		var frames = [make_frame(0, vals)];
 		var got = roundtrip(frames);
 		assert_length(1, got.length, "frames");
-		assert_vals_eq(vals, got[0].vals);
+		assert_vals_eq(vals, got[0].data.vals);
 	}
 
 	def assert_length(expected: int, got: int, what: string) {
@@ -111,9 +111,9 @@ class CompressionTester(t: Tester, adapter: CompressionStrategyAdapter) {
 		assert_length(expected.length, got.length, "frames");
 		for (i < expected.length) {
 			var e = expected[i], g = got[i];
-			if (e.func != g.func) t.fail1("frame[%d]: func mismatch", i);
-			if (e.pc != g.pc) t.fail3("frame[%d]: expected pc=%d, got pc=%d", i, e.pc, g.pc);
-			assert_vals_eq(e.vals, g.vals);
+			if (e.data.func != g.data.func) t.fail1("frame[%d]: func mismatch", i);
+			if (e.data.pc != g.data.pc) t.fail3("frame[%d]: expected pc=%d, got pc=%d", i, e.data.pc, g.data.pc);
+			assert_vals_eq(e.data.vals, g.data.vals);
 		}
 	}
 }
@@ -164,7 +164,7 @@ def test_ref(t: CompressionTester) {
 	// Verify identity is preserved.
 	var frames = [t.make_frame(0, [Value.Ref(obj)])];
 	var got = t.roundtrip(frames);
-	match (got[0].vals[0]) {
+	match (got[0].data.vals[0]) {
 		Ref(v) => if (v != obj) t.t.fail("ref identity not preserved");
 		_ => t.t.fail("expected Ref value");
 	}
@@ -179,8 +179,8 @@ def test_single_empty_frame(t: CompressionTester) {
 	var frames = [t.make_frame(7, [])];
 	var got = t.roundtrip(frames);
 	t.assert_length(1, got.length, "frames");
-	t.assert_length(0, got[0].vals.length, "values");
-	if (got[0].pc != 7) t.t.fail1("expected pc=7, got pc=%d", got[0].pc);
+	t.assert_length(0, got[0].data.vals.length, "values");
+	if (got[0].data.pc != 7) t.t.fail1("expected pc=7, got pc=%d", got[0].data.pc);
 }
 
 def test_multi_empty_frames(t: CompressionTester) {
@@ -188,8 +188,8 @@ def test_multi_empty_frames(t: CompressionTester) {
 	var got = t.roundtrip(frames);
 	t.assert_length(3, got.length, "frames");
 	for (i < 3) {
-		t.assert_length(0, got[i].vals.length, "values");
-		if (got[i].pc != i) t.t.fail1("expected pc=%d, got wrong pc", i);
+		t.assert_length(0, got[i].data.vals.length, "values");
+		if (got[i].data.pc != i) t.t.fail1("expected pc=%d, got wrong pc", i);
 	}
 }
 
@@ -229,7 +229,7 @@ def test_cont(t: CompressionTester) {
 	// Verify stored object and version are preserved.
 	var frames = [t.make_frame(0, [Value.Cont(cont)])];
 	var got = t.roundtrip(frames);
-	match (got[0].vals[0]) {
+	match (got[0].data.vals[0]) {
 		Cont(got_cont) => {
 			if (Continuations.getStoredStack(got_cont) != stack) t.t.fail("cont stack not preserved");
 			if (Continuations.getStoredVersion(got_cont) != Continuations.getStoredVersion(cont)) t.t.fail("cont version not preserved");
@@ -240,12 +240,12 @@ def test_cont(t: CompressionTester) {
 
 def test_frame_metadata(t: CompressionTester) {
 	var func = t.getDummyFunc();
-	var frame = RelocatableFrame(func, 42, false, DUMMY_REENTRY, DUMMY_REENTRY, [Value.I32(99)]);
+	var frame = RelocatableFrame(WasmFrameData(func, 42, DUMMY_REENTRY, [Value.I32(99)]), false, DUMMY_REENTRY);
 	var got = t.roundtrip([frame]);
 	t.assert_length(1, got.length, "frames");
-	if (got[0].func != func) t.t.fail("func not preserved");
-	if (got[0].pc != 42) t.t.fail1("expected pc=42, got pc=%d", got[0].pc);
-	t.assert_vals_eq([Value.I32(99)], got[0].vals);
+	if (got[0].data.func != func) t.t.fail("func not preserved");
+	if (got[0].data.pc != 42) t.t.fail1("expected pc=42, got pc=%d", got[0].data.pc);
+	t.assert_vals_eq([Value.I32(99)], got[0].data.vals);
 }
 
 // Many identical values within a single frame.
@@ -323,11 +323,11 @@ def test_refs_mixed(t: CompressionTester) {
 	var frames = [t.make_frame(0, vals)];
 	var got = t.roundtrip(frames);
 	t.assert_length(1, got.length, "frames");
-	t.assert_length(vals.length, got[0].vals.length, "values");
+	t.assert_length(vals.length, got[0].data.vals.length, "values");
 	// Verify identity for each ref.
 	for (i < vals.length) {
 		match (vals[i]) {
-			Ref(expected) => match (got[0].vals[i]) {
+			Ref(expected) => match (got[0].data.vals[i]) {
 				Ref(actual) => if (expected != actual) t.t.fail1("ref[%d]: identity not preserved", i);
 				_ => t.t.fail1("ref[%d]: expected Ref", i);
 			}
@@ -351,13 +351,13 @@ def test_refs_shared_across_frames(t: CompressionTester) {
 	t.assert_frames_eq(frames, got);
 	// Verify cross-frame identity: obj_a in frame 0 == obj_a in frame 1 and 2.
 	var get_ref = get_ref_val;
-	var a0 = get_ref(got[0].vals[0]);
-	var a1 = get_ref(got[1].vals[1]);
-	var a2 = get_ref(got[2].vals[0]);
+	var a0 = get_ref(got[0].data.vals[0]);
+	var a1 = get_ref(got[1].data.vals[1]);
+	var a2 = get_ref(got[2].data.vals[0]);
 	if (a0 != a1) t.t.fail("obj_a identity not preserved across frames 0 and 1");
 	if (a0 != a2) t.t.fail("obj_a identity not preserved across frames 0 and 2");
-	var b1 = get_ref(got[1].vals[0]);
-	var b2 = get_ref(got[2].vals[1]);
+	var b1 = get_ref(got[1].data.vals[0]);
+	var b2 = get_ref(got[2].data.vals[1]);
 	if (b1 != b2) t.t.fail("obj_b identity not preserved across frames 1 and 2");
 }
 
