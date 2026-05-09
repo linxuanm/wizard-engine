@@ -19,6 +19,7 @@ class CompressionStrategy<C> {
 
 class CompressedStack {
 	def size() -> u64;
+	def render(buf: StringBuilder) -> StringBuilder;
 }
 
 component StackCompression {
@@ -38,5 +39,40 @@ component StackCompression {
 			x: PackedCompressedStack => frames = packed.decompress(x);
 		}
 		Target.writeFramesToStack(to, frames);
+	}
+
+	// Render a frame array as a table.
+	// Both the frame stack and the value stack preview are rendered from stack top to bottom.
+	def renderFrames(frames: Array<RelocatableFrame>, buf: TraceBuilder) {
+		var t = TraceTable.new(["Frame Type", "Function", "PC", "Return Address", "Value Stack Top"]);
+		t.cells[0].set(10, Justification.LEFT,  Color.DEFAULT);
+		t.cells[1].set(10, Justification.RIGHT, Color.FUNC);
+		t.cells[2].set(8,  Justification.RIGHT, Color.LINE);
+		t.cells[3].set(20, Justification.RIGHT, Color.DEFAULT);
+		t.cells[4].set(40, Justification.LEFT,  Color.DEFAULT);
+
+		t.putTableHeader(buf);
+		buf.flush();
+
+		for (fi = frames.length - 1; fi >= 0; fi--) {
+			var frame = frames[fi];
+			t.cells[0].puts(if(frame.is_spc, "SPC", "INT"));
+			t.cells[1].putd(frame.data.func.decl.func_index);
+			t.cells[2].putd(frame.data.pc);
+			t.cells[3].puts("0x").putx_64(frame.data.ret_addr);
+
+			var vals = frame.data.vals;
+			var preview_count = if(vals.length < 2, vals.length, 2);
+			for (i < preview_count) {
+				if (i > 0) t.cells[4].sp();
+				Values.render(vals[vals.length - 1 - i], t.cells[4]);
+			}
+			if (preview_count > 0) t.cells[4].sp();
+			if (vals.length > 2) t.cells[4].puts("... ");
+			t.cells[4].put1("(%d total)", vals.length);
+
+			t.putTableRow(buf);
+		}
+		buf.flush();
 	}
 }
