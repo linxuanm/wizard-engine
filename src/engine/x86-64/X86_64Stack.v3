@@ -181,12 +181,6 @@ class X86_64Stack extends WasmStack {
 		return (false, StackFramePos(this, TargetFrame(Pointer.NULL)));
 	}
 	private def emitWalkRow(s: X86_64Stack, retip: Pointer, sfp: Pointer, code: RiUserCode, action: StackWalkAction) {
-		var actionStr: string;
-		match (action) {
-			TO_PREV_FRAME   => actionStr = "To Prev Frame";
-			TO_PARENT_STACK => actionStr = "To Parent Stack";
-			FINISH          => actionStr = "Finish";
-		}
 		var C = walkTraceTable.cells;
 		C[0].put1("0x%x", Pointer.atObject(s) - Pointer.NULL);
 		var name = getFrameName(code);
@@ -194,7 +188,7 @@ class X86_64Stack extends WasmStack {
 		else C[1].puts("<unknown>");
 		C[2].put1("0x%x", sfp - Pointer.NULL);
 		C[3].put1("0x%x", retip - Pointer.NULL);
-		C[4].puts(actionStr);
+		C[4].puts(action.name);
 		walkTraceTable.putTableRow(Trace.OUT);
 	}
 	def traceFrames(when: string, sfp: Pointer) {
