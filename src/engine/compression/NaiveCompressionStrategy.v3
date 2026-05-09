@@ -15,4 +15,6 @@ class NaiveCompressionStrategy extends CompressionStrategy<NaiveCompressedStack>
 
 class NaiveCompressedStack extends CompressedStack {
 	var frames: Array<RelocatableFrame>;
+
+	def name() -> string { return "Naive Compressed Stack"; }
 }

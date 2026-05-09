@@ -19,7 +19,12 @@ class CompressionStrategy<C> {
 
 class CompressedStack {
 	def size() -> u64;
-	def render(buf: StringBuilder) -> StringBuilder;
+	def name() -> string;
+	def trace(buf: TraceBuilder) {
+		buf.put1("%s:", name()).ln();
+		var frames = StackCompression.decompressFrames(this);
+		StackCompression.traceFrames(frames, buf);
+	}
 }
 
 component StackCompression {
@@ -33,17 +38,22 @@ component StackCompression {
 	}
 
 	def decompressStack(to: WasmStack, from: CompressedStack) {
-		var frames: Array<RelocatableFrame>;
-		match (from) {
-			x: NaiveCompressedStack => frames = naive.decompress(x);
-			x: PackedCompressedStack => frames = packed.decompress(x);
-		}
+		var frames = decompressFrames(from);
 		Target.writeFramesToStack(to, frames);
 	}
 
-	// Render a frame array as a table.
+	def decompressFrames(from: CompressedStack) -> Array<RelocatableFrame> {
+		match (from) {
+			x: NaiveCompressedStack => return naive.decompress(x);
+			x: PackedCompressedStack => return packed.decompress(x);
+			_ => System.error("StackCompression", "unknown compressed stack type");
+		}
+		return null;
+	}
+
+	// Trace a frame array as a table.
 	// Both the frame stack and the value stack preview are rendered from stack top to bottom.
-	def renderFrames(frames: Array<RelocatableFrame>, buf: TraceBuilder) {
+	def traceFrames(frames: Array<RelocatableFrame>, buf: TraceBuilder) {
 		var t = TraceTable.new(["Frame Type", "Function", "PC", "Return Address", "Value Stack Top"]);
 		t.cells[0].set(10, Justification.LEFT,  Color.DEFAULT);
 		t.cells[1].set(10, Justification.RIGHT, Color.FUNC);

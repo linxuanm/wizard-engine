@@ -20,10 +20,12 @@ def naive = NaiveCompressionStrategy.new();
 def packed = PackedCompressionStrategy.new();
 
 def naiveRoundtrip(frames: Array<RelocatableFrame>) -> Array<RelocatableFrame> {
-	return naive.decompress(naive.compress(frames));
+	var c = naive.compress(frames);
+	return naive.decompress(c);
 }
 def packedRoundtrip(frames: Array<RelocatableFrame>) -> Array<RelocatableFrame> {
-	return packed.decompress(packed.compress(frames));
+	var c = packed.compress(frames);
+	return packed.decompress(c);
 }
 
 // Register all tests across all strategies: for each test, register it once for every strategy.

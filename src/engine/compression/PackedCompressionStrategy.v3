@@ -83,4 +83,6 @@ class PackedCompressedStack extends CompressedStack {
 	// Packed value stack representation.
 	var packed: Array<byte>;
 	var refs: Array<Object>;
+
+	def name() -> string { return "Packed Compressed Stack"; }
 }
