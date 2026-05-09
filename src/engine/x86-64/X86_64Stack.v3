@@ -128,10 +128,12 @@ class X86_64Stack extends WasmStack {
 	def walk<P>(f: (Pointer, RiUserCode, StackFramePos, P) -> bool, param: P, start_srp: Pointer, continue_to_parent: bool) -> (bool, StackFramePos) {
 		var stack = this;
 		var srp = start_srp;
+
+		// Tracing.
+		var tableWidth = 0;
 		if (Trace.stack) {
 			Trace.OUT.puts("Stack walk trace:").ln();
-			walkTraceTable.putTableHeader(Trace.OUT);
-			Trace.OUT.flush();
+			tableWidth = walkTraceTable.putTableHeader(Trace.OUT);
 		}
 		while (srp < stack.mapping.range.end) {
 			var retip = srp.load<Pointer>();
@@ -159,7 +161,11 @@ class X86_64Stack extends WasmStack {
 					result = (false, StackFramePos(this, TargetFrame(Pointer.NULL)));
 				}
 			}
-			if (Trace.stack) emitWalkRow(stack, retip, sfp, code, action);
+			if (Trace.stack) {
+				emitWalkRow(stack, retip, sfp, code, action);
+				// Add separator if finishing or moving to parent stack.
+				if (action != StackWalkAction.TO_PREV_FRAME) Trace.OUT.pad('-', Trace.OUT.length + tableWidth).ln();
+			}
 			match (action) {
 				FINISH => return result;
 				TO_PARENT_STACK => {
@@ -190,7 +196,6 @@ class X86_64Stack extends WasmStack {
 		C[3].put1("0x%x", retip - Pointer.NULL);
 		C[4].puts(actionStr);
 		walkTraceTable.putTableRow(Trace.OUT);
-		Trace.OUT.flush();
 	}
 	def traceFrames(when: string, sfp: Pointer) {
 		Trace.OUT.puts(when);
