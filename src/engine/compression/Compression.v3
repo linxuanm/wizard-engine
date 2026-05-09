@@ -27,6 +27,17 @@ class CompressedStack {
 	}
 }
 
+def traceFramesTable = initTraceFramesTable();
+def initTraceFramesTable() -> TraceTable {
+	var t = TraceTable.new(["Frame Type", "Function", "PC", "Return Address", "Value Stack Top"]);
+	t.cells[0].set(10, Justification.LEFT,  Color.DEFAULT);
+	t.cells[1].set(10, Justification.RIGHT, Color.FUNC);
+	t.cells[2].set(8,  Justification.RIGHT, Color.LINE);
+	t.cells[3].set(20, Justification.RIGHT, Color.DEFAULT);
+	t.cells[4].set(40, Justification.LEFT,  Color.DEFAULT);
+	return t;
+}
+
 component StackCompression {
 	def naive = NaiveCompressionStrategy.new();
 	def packed = PackedCompressionStrategy.new();
@@ -54,13 +65,7 @@ component StackCompression {
 	// Trace a frame array as a table.
 	// Both the frame stack and the value stack preview are rendered from stack top to bottom.
 	def traceFrames(frames: Array<RelocatableFrame>, buf: TraceBuilder) {
-		var t = TraceTable.new(["Frame Type", "Function", "PC", "Return Address", "Value Stack Top"]);
-		t.cells[0].set(10, Justification.LEFT,  Color.DEFAULT);
-		t.cells[1].set(10, Justification.RIGHT, Color.FUNC);
-		t.cells[2].set(8,  Justification.RIGHT, Color.LINE);
-		t.cells[3].set(20, Justification.RIGHT, Color.DEFAULT);
-		t.cells[4].set(40, Justification.LEFT,  Color.DEFAULT);
-
+		var t = traceFramesTable;
 		t.putTableHeader(buf);
 		buf.flush();
 
