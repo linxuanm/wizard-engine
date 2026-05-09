@@ -1,6 +1,13 @@
 // Copyright 2025 Wizard authors. All rights reserved.
 // See LICENSE for details of Apache 2.0 license.
 
+type FrameHeader(func: WasmFunction, pc: int, is_spc: bool, reentry: u64, bytecode_ip: u64, n_vals: int) #unboxed {
+
+	def render(buf: StringBuilder) -> StringBuilder {
+		return buf.put3("Frame(func=%d, pc=%d, n_vals=%d)", func.decl.func_index, pc, n_vals);
+	}
+}
+
 class PackedCompressionStrategy extends CompressionStrategy<PackedCompressedStack> {
 	def frames_builder = Vector<FrameHeader>.new();
 	def refs_builder = Vector<Object>.new();

@@ -3,7 +3,7 @@
 
 // Generalized- relocatable representation of a stack frame that can be serialized.
 // {bytecode_ip} is unused when {is_spc} is true.
-type RelocatableFrame(func: WasmFunction, pc: int, is_spc: bool, reentry: TargetReentryLabel, bytecode_ip: TargetReentryLabel, vals: Array<Value>) #unboxed {
+type RelocatableFrame(func: WasmFunction, pc: int, is_spc: bool, reentry: u64, bytecode_ip: u64, vals: Array<Value>) #unboxed {
 
 	def render(buf: StringBuilder) -> StringBuilder {
 		// Frame header.
@@ -22,15 +22,6 @@ type RelocatableFrame(func: WasmFunction, pc: int, is_spc: bool, reentry: Target
 class CompressionStrategy<C> {
 	def compress(frames: Range<RelocatableFrame>) -> C;
 	def decompress(comp: C) -> Array<RelocatableFrame>;
-}
-
-// Compressed stack representation.
-
-type FrameHeader(func: WasmFunction, pc: int, is_spc: bool, reentry: TargetReentryLabel, bytecode_ip: TargetReentryLabel, n_vals: int) #unboxed {
-
-	def render(buf: StringBuilder) -> StringBuilder {
-		return buf.put3("Frame(func=%d, pc=%d, n_vals=%d)", func.decl.func_index, pc, n_vals);
-	}
 }
 
 class CompressedStack {

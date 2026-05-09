@@ -3,7 +3,7 @@
 
 // Zero-initialized reentry label used as a placeholder in test frames.
 // TODO: fuzz this for testing
-var DUMMY_REENTRY: TargetReentryLabel;
+var DUMMY_REENTRY: u64;
 
 // An adapter that erases the compressed stack type to perform strategy-agnostic roundtrip tests.
 class CompressionStrategyAdapter {

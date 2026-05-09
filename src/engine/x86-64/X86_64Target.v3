@@ -192,9 +192,6 @@ class TargetHandlerDest(is_dummy: bool) {
 	var dest_stack: Array<ValueType>;
 }
 
-// Stack compression specialization.
-type TargetReentryLabel(ret_addr: Pointer) #unboxed;
-
 class X86_64ExecutionStrategy extends ExecutionStrategy {
 	// Call a function with arguments and return a result.
 	def call(func: Function, args: Range<Value>) -> Result {
