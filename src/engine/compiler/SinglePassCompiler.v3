@@ -616,9 +616,13 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 								masm.emit_mov_r_Continuation(reg, v);
 								state.push(KIND_CONT | IN_REG, reg, 0);
 							} else {
-								// TODO[ref_u64]: emit non-inline Cont arg (write 16 bytes via XMM
-								// scratch in unboxed mode; 8 bytes via GPR scratch in boxed mode).
-								System.error("TODO", "TODO");
+								// Load the literal Continuation into a kind-correct scratch
+								// (XMM in unboxed mode, GPR in boxed mode), then store to the
+								// slot. emit_mov_m_r dispatches on kind: 16-byte movdqu in
+								// unboxed, 8-byte movq in boxed.
+								var scratch = allocTmp(Continuations.valueKind);
+								masm.emit_mov_r_Continuation(scratch, v);
+								masm.emit_mov_m_r(Continuations.valueKind, slot_addr, scratch);
 							}
 							kind = Continuations.valueTag;
 						}
