@@ -2369,10 +2369,10 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			endHandler();
 		}
 		bindHandler(Opcode.REF_NULL); {
+			// TODO[ref_u64]: check ref type
 			genSkipLeb();
 			genTagPush(BpTypeCode.REF_NULL.code);
 			asm.movq_m_i(vsph[0].value, 0);
-			// XXX: only clear upper slot when REF is guaranteed a REF_U64
 			asm.movq_m_i(vsph[0].value.plus(8), 0);
 			incrementVsp();
 			endHandler();
@@ -2447,9 +2447,11 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			saveCallerIVars();
 			genReadUleb32(G(cont_id)); // read signature index
 
-			var cont = xenv.xmm0;
+			// {cont} register matches {Continuations.valueKind}: GPR in boxed mode,
+			// XMM in unboxed mode. Pick a free reg of the right class.
+			var cont = if(FeatureDisable.unboxedConts, xenv.tmp3, xenv.xmm0);
 			var contStack = xenv.tmp1;
-			genPopCont(X(cont));
+			genPopCont(cont);
 			masm.emit_validate_and_consume_cont(contStack, cont);
 
 			// move parameter values from %curStack to %cont.top
@@ -2487,9 +2489,11 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			genSkipLeb(); // skip signature index
 			genReadUleb32(G(tag_id)); // read tag index
 
-			var cont = xenv.xmm0;
+			// {cont} register matches {Continuations.valueKind}: GPR in boxed mode,
+			// XMM in unboxed mode.
+			var cont = if(FeatureDisable.unboxedConts, xenv.tmp3, xenv.xmm0);
 			var contStack = xenv.tmp1;
-			genPopCont(X(cont));
+			genPopCont(cont);
 			masm.emit_validate_and_consume_cont(contStack, cont);
 
 			var curStack = xenv.tmp4;
@@ -2500,10 +2504,12 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			);
 			restoreCallerIVars();
 			/* === only reachable when continuation handles the error === */
-			genPopCont(X(cont)); // XXX: make RT function return {Continuation} directly
-			masm.emit_ref_from_ref_u64(contStack, cont);
-			if (FeatureDisable.unboxedConts) { // boxed continuation
-				masm.emit_mov_r_m(ValueKind.REF, contStack, MasmAddr(contStack, offsets.Continuation_stack));
+			genPopCont(cont); // XXX: make RT function return {Continuation} directly
+			// extract {cont.stack} into contStack; mode-aware as in SPC RESUME_THROW.
+			if (FeatureDisable.unboxedConts) {
+				masm.emit_v3_Continuation_stack_r_r(contStack, cont);
+			} else {
+				masm.emit_ref_from_ref_u64(contStack, cont);
 			}
 
 			// chain {cont} to {curStack}, then set {m_curStack} to {cont.top}.
@@ -2528,9 +2534,12 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			saveCallerIVars();
 			genSkipLeb(); // skip signature index
 
-			var cont = xenv.xmm0, ex = xenv.tmp0;
+			// {cont} register matches {Continuations.valueKind}: GPR in boxed mode,
+			// XMM in unboxed mode.
+			var cont = if(FeatureDisable.unboxedConts, xenv.tmp3, xenv.xmm0);
+			var ex = xenv.tmp0;
 			var contStack = xenv.tmp1;
-			genPopCont(X(cont));
+			genPopCont(cont);
 			genPopInto(G(ex));
 			masm.emit_validate_and_consume_cont(contStack, cont);
 
@@ -2542,10 +2551,12 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			);
 			restoreCallerIVars();
 			/* === only reachable when continuation handles the error === */
-			genPopCont(X(cont)); // XXX: make RT function return {Continuation} directly
-			masm.emit_ref_from_ref_u64(contStack, cont);
-			if (FeatureDisable.unboxedConts) { // boxed continuation
-				masm.emit_mov_r_m(ValueKind.REF, contStack, MasmAddr(contStack, offsets.Continuation_stack));
+			genPopCont(cont); // XXX: make RT function return {Continuation} directly
+			// extract {cont.stack} into contStack; mode-aware as in SPC RESUME_THROW_REF.
+			if (FeatureDisable.unboxedConts) {
+				masm.emit_v3_Continuation_stack_r_r(contStack, cont);
+			} else {
+				masm.emit_ref_from_ref_u64(contStack, cont);
 			}
 
 			// chain {cont} to {curStack}, then set {m_curStack} to {cont.top}.
@@ -4220,13 +4231,19 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		decrementVsp();
 		asm.movq_r_m(reg, vsph[0].value);
 	}
-	private def genPopCont(reg: X86_64Xmmr) {
+	// Pops a continuation value from the value stack into {reg}, which must
+	// match {Continuations.valueKind}'s register class:
+	//   - boxed mode: GPR receives the 8-byte Continuation pointer.
+	//   - unboxed mode: XMM receives the 16-byte (stack, version) pair.
+	private def genPopCont(reg: Reg) {
 		decrementVsp();
-		asm.movq_r_m(r_scratch, vsph[0].value);
-		asm.pinsrq_s_r_i(reg, r_scratch, 0);
-		if (!FeatureDisable.unboxedConts) {
+		if (FeatureDisable.unboxedConts) {
+			asm.movq_r_m(G(reg), vsph[0].value);
+		} else {
+			asm.movq_r_m(r_scratch, vsph[0].value);
+			asm.pinsrq_s_r_i(X(reg), r_scratch, 0);
 			asm.movd_r_m(r_scratch, vsph[0].value.plus(8));
-			asm.pinsrq_s_r_i(reg, r_scratch, 1);
+			asm.pinsrq_s_r_i(X(reg), r_scratch, 1);
 		}
 	}
 	// generates cleanup code for after a child stack returns

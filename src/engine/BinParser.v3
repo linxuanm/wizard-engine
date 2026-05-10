@@ -991,17 +991,21 @@ type ValueTypeCode(code: i8, index: i32) #unboxed {
 			BpTypeCode.I31REF.val,
 			BpTypeCode.NULLFUNCREF.val,
 			BpTypeCode.NULLEXTERNREF.val,
-			BpTypeCode.NULLCONTREF.val,
 			BpTypeCode.NULLEXNREF.val,
 			BpTypeCode.ARRAYREF.val,
 			BpTypeCode.EXNREF.val,
 			BpTypeCode.NULLREF.val => return ValueKind.REF;
-			BpTypeCode.CONTREF.val => return ValueKind.REF_U64;
+			BpTypeCode.CONTREF.val,
+			BpTypeCode.NULLCONTREF.val => return Continuations.valueKind;
 			BpTypeCode.REF.val,
 			BpTypeCode.REF_NULL.val => {
-				if (index < 0) return ValueKind.REF;
+				if (index < 0) {
+					if (index == BpHeapTypeCode.CONTREF.val
+						|| index == BpHeapTypeCode.NOCONT.val) return Continuations.valueKind;
+					return ValueKind.REF;
+				}
 				var t = instance.heaptypes[index];
-				return if(ContDecl.?(t), ValueKind.REF_U64, ValueKind.REF);
+				return if(ContDecl.?(t), Continuations.valueKind, ValueKind.REF);
 			}
 			_ => return fail();
 		}

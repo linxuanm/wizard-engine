@@ -713,8 +713,11 @@ class V3Interpreter extends WasmStack {
 
 			REF_NULL => {
 				var index = codeptr.read_sleb32();
-				if (index < 0) push(Values.REF_NULL);
-				else {
+				if (index < 0) {
+					if (index == BpHeapTypeCode.CONTREF.val
+						|| index == BpHeapTypeCode.NOCONT.val) push(Values.CONT_NULL);
+					else push(Values.REF_NULL);
+				} else {
 					var ht = frame.func.instance.heaptypes[index];
 					push(if(ContDecl.?(ht), Values.CONT_NULL, Values.REF_NULL));
 				}
