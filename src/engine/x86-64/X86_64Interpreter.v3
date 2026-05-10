@@ -2369,13 +2369,42 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			endHandler();
 		}
 		bindHandler(Opcode.REF_NULL); {
-			// TODO[ref_u64]: check ref type
-			genSkipLeb();
-			genTagPush(BpTypeCode.REF_NULL.code);
-			asm.movq_m_i(vsph[0].value, 0);
-			asm.movq_m_i(vsph[0].value.plus(8), 0);
-			incrementVsp();
-			endHandler();
+			var l_is_cont = X86_64Label.new(), l_not_cont = X86_64Label.new();
+			// Read LEB into r_tmp0.
+			genReadSleb32_inline(r_tmp0);
+			// If {r_tmp0 < 0}: check against heap type code.
+			asm.d.cmp_r_i(r_tmp0, BpHeapTypeCode.CONTREF.val);
+			asm.jc_rel_near(C.Z, l_is_cont);
+			asm.d.cmp_r_i(r_tmp0, BpHeapTypeCode.NOCONT.val);
+			asm.jc_rel_near(C.Z, l_is_cont);
+			// Any other negative value is a heap type that isn't a continuation.
+			asm.d.cmp_r_i(r_tmp0, 0);
+			asm.jc_rel_near(C.S, l_not_cont);
+
+			// If {r_tmp0 >= 0}: get the corresponding HeapTypeDecl and do a type check.
+			// Load instance.heaptypes[r_tmp0] (a HeapTypeDecl *) into r_tmp0.
+			masm.emit_v3_Instance_heaptypes_r_r(xenv.tmp1, xenv.instance);
+			masm.emit_v3_Array_elem_r_rr(ValueKind.REF, xenv.tmp0, xenv.tmp1, xenv.tmp0);
+			// Check the object header on r_tmp0 against ContDecl's type ID.
+			asm.d.cmp_m_i(r_tmp0.plus(0), offsets.ContDecl_typeId);
+			asm.jc_rel_far(C.Z, l_is_cont);
+
+			// If reference type is not a continuation, fallthru to here and tag it with {REF_NULL}.
+			asm.bind(l_not_cont); {
+				genTagPush(BpTypeCode.REF_NULL.code);
+				asm.movq_m_i(vsph[0].value, 0);
+				asm.movq_m_i(vsph[0].value.plus(8), 0);
+				incrementVsp();
+				endHandler();
+			}
+			// If reference type is a continuation, tag it with {CONTREF}.
+			asm.bind(l_is_cont); {
+				genTagPush(BpTypeCode.CONTREF.code);
+				asm.movq_m_i(vsph[0].value, 0);
+				asm.movq_m_i(vsph[0].value.plus(8), 0);
+				incrementVsp();
+				endHandler();
+			}
 		}
 		bindHandler(Opcode.REF_IS_NULL); {
 			asm.d.test_m_i(vsph[-1].value, -1);
