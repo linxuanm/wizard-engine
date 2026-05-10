@@ -142,37 +142,40 @@ class X86_64Stack extends WasmStack {
 			var accessor: FrameAccessor;
 
 			var pos = StackFramePos(stack, TargetFrame(sfp));
-			var action = StackWalkAction.TO_PREV_FRAME;
-			var result = (false, pos);
 			match (code) {
 				x: X86_64InterpreterCode,
 				x: X86_64SpcModuleCode,
 				x: X86_64SpcInlinedFrame,
-				x: X86_64SpcTrapsStub => if (f != null && !f(retip, code, pos, param)) {
-					action = StackWalkAction.FINISH;
-					result = (true, pos);
+				x: X86_64SpcTrapsStub => {
+					if (f != null && !f(retip, code, pos, param)) {
+						// Early termination from frame predicate.
+						if (Trace.stack) printWalkStep(stack, retip, sfp, code, "Finish", tableWidth);
+						return (true, pos);
+					} else {
+						// Continue to previous frame.
+						if (Trace.stack) printWalkStep(stack, retip, sfp, code, "To Prev Frame", 0);
+						srp = code.nextFrame(retip, srp).1;
+					}
 				}
 				x: X86_64ReturnParentStub => {
-					if (stack.parent == null || !continue_to_parent) action = StackWalkAction.FINISH;
-					else action = StackWalkAction.TO_PARENT_STACK;
+					if (stack.parent == null || !continue_to_parent) {
+						// End of stack frames. Terminate stack walk.
+						if (Trace.stack) printWalkStep(stack, retip, sfp, code, "Finish", tableWidth);
+						return (false, pos);
+					} else {
+						// Continue to parent stack.
+						if (Trace.stack) printWalkStep(stack, retip, sfp, code, "To Parent Stack", tableWidth);
+						stack = X86_64Stack.!(stack.parent);
+						srp = stack.rsp;
+					}
 				}
 				null => {
-					action = StackWalkAction.FINISH;
-					result = (false, StackFramePos(this, TargetFrame(Pointer.NULL)));
+					if (Trace.stack) printWalkStep(stack, retip, sfp, code, "Unknown", tableWidth);
+					return (false, StackFramePos(this, TargetFrame(Pointer.NULL)));
 				}
-			}
-			if (Trace.stack) {
-				emitWalkRow(stack, retip, sfp, code, action);
-				// Add separator if finishing or moving to parent stack.
-				if (action != StackWalkAction.TO_PREV_FRAME) Trace.OUT.pad('-', Trace.OUT.length + tableWidth).ln();
-			}
-			match (action) {
-				FINISH => return result;
-				TO_PARENT_STACK => {
-					stack = X86_64Stack.!(stack.parent);
-					srp = stack.rsp;
-				}
-				TO_PREV_FRAME => {
+				_ => {
+					// Unrecognized frame: continue to previous frame.
+					if (Trace.stack) printWalkStep(stack, retip, sfp, code, "To Prev Frame", 0);
 					srp = code.nextFrame(retip, srp).1;
 				}
 			}
@@ -180,7 +183,7 @@ class X86_64Stack extends WasmStack {
 //TODO		fatal(Strings.format1("invalid stack state: rsp=0x%x", this.rsp - Pointer.NULL));
 		return (false, StackFramePos(this, TargetFrame(Pointer.NULL)));
 	}
-	private def emitWalkRow(s: X86_64Stack, retip: Pointer, sfp: Pointer, code: RiUserCode, action: StackWalkAction) {
+	private def printWalkStep(s: X86_64Stack, retip: Pointer, sfp: Pointer, code: RiUserCode, action: string, sep_length: int) {
 		var C = walkTraceTable.cells;
 		C[0].put1("0x%x", Pointer.atObject(s) - Pointer.NULL);
 		var name = getFrameName(code);
@@ -188,8 +191,9 @@ class X86_64Stack extends WasmStack {
 		else C[1].puts("<unknown>");
 		C[2].put1("0x%x", sfp - Pointer.NULL);
 		C[3].put1("0x%x", retip - Pointer.NULL);
-		C[4].puts(action.name);
+		C[4].puts(action);
 		walkTraceTable.putTableRow(Trace.OUT);
+		if (sep_length > 0) Trace.OUT.pad('-', Trace.OUT.length + sep_length).ln();
 	}
 	def traceFrames(when: string, sfp: Pointer) {
 		Trace.OUT.puts(when);
