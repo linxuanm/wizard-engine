@@ -1432,13 +1432,16 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 				setUnreachable();
 			}
 		} else if (sv.inReg()) {
-			masm.emit_br_r(sv.reg, MasmBrCond.REF_NULL, newTrapLabel(TrapReason.NULL_DEREF));
+			// Route through {emitBrIfR}, which dispatches on REF_U64 (XMM cont).
+			emitBrIfR(sv, MasmBrCond.REF_NULL, newTrapLabel(TrapReason.NULL_DEREF));
 		} else {
 			// XXX: use masm.br_m if necessary?
 			var tos = state.sp - 1;
-			var reg = allocReg(ValueKind.REF, tos);
-			masm.emit_mov_r_s(ValueKind.REF, reg, tos);
-			masm.emit_br_r(reg, MasmBrCond.REF_NULL, newTrapLabel(TrapReason.NULL_DEREF));
+			var kind = sv.kind(); // REF or REF_U64 (cont in unboxed mode)
+			var reg = allocReg(kind, tos);
+			masm.emit_mov_r_s(kind, reg, tos);
+			emitBrIfR(SpcVal(sv.flags | IN_REG, reg, sv.const),
+				MasmBrCond.REF_NULL, newTrapLabel(TrapReason.NULL_DEREF));
 			state.overwrite(sv.kindFlagsAndTag(IN_REG | (sv.flags & IS_STORED)), reg, 0);
 		}
 	}
