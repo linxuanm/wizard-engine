@@ -416,26 +416,11 @@ class X86_64SinglePassCompiler extends SinglePassCompiler {
 	}
 	def visit_REF_EQ()   {
 		// XXX: constant fold and recombine with visitCompareI
+		// `ref.eq` restricts both operands to (ref null eq) subtypes
+		// (CodeValidator.v3 REF_EQ branch); continuations are not in
+		// comparable so both operands are guaranteed to fit in GPR.
 		var b = popReg(), a = popReg();
-		// Either operand may be a continuation (REF_U64 in XMM). Materialize the
-		// ref half of each into a GPR before the cmp. Use {xenv.scratch} for one
-		// extraction and an allocTmp GPR for the other so they coexist for cmp.
-		var ra: X86_64Gpr;
-		var rb: X86_64Gpr;
-		if (a.kind() == ValueKind.REF_U64) {
-			masm.emit_ref_from_ref_u64(xenv.scratch, a.reg);
-			ra = G(xenv.scratch);
-		} else {
-			ra = G(a.reg);
-		}
-		if (b.kind() == ValueKind.REF_U64) {
-			var bScratch = allocTmp(ValueKind.REF);
-			masm.emit_ref_from_ref_u64(bScratch, b.reg);
-			rb = G(bScratch);
-		} else {
-			rb = G(b.reg);
-		}
-		asm.cmp_r_r(ra, rb);
+		asm.cmp_r_r(G(a.reg), G(b.reg));
 		var d = allocRegTos(ValueKind.I32), r1 = G(d);
 		asm.set_r(C.Z, r1);
 		asm.movbzx_r_r(r1, r1);
