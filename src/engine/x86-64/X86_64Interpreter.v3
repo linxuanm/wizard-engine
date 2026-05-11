@@ -2370,23 +2370,23 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		}
 		bindHandler(Opcode.REF_NULL); {
 			var l_is_cont = X86_64Label.new(), l_not_cont = X86_64Label.new();
-			// Read LEB into r_tmp0.
-			genReadSleb32_inline(r_tmp0);
-			// If {r_tmp0 < 0}: check against heap type code.
-			asm.d.cmp_r_i(r_tmp0, BpHeapTypeCode.CONTREF.val);
+			// Read LEB into r_tmp1.
+			genReadSleb32_inline(r_tmp1);
+			// If {r_tmp1 < 0}: check against heap type code.
+			asm.d.cmp_r_i(r_tmp1, BpHeapTypeCode.CONTREF.val);
 			asm.jc_rel_near(C.Z, l_is_cont);
-			asm.d.cmp_r_i(r_tmp0, BpHeapTypeCode.NOCONT.val);
+			asm.d.cmp_r_i(r_tmp1, BpHeapTypeCode.NOCONT.val);
 			asm.jc_rel_near(C.Z, l_is_cont);
 			// Any other negative value is a heap type that isn't a continuation.
-			asm.d.cmp_r_i(r_tmp0, 0);
+			asm.d.cmp_r_i(r_tmp1, 0);
 			asm.jc_rel_near(C.S, l_not_cont);
 
-			// If {r_tmp0 >= 0}: get the corresponding HeapTypeDecl and do a type check.
-			// Load instance.heaptypes[r_tmp0] (a HeapTypeDecl *) into r_tmp0.
-			masm.emit_v3_Instance_heaptypes_r_r(xenv.tmp1, xenv.instance);
-			masm.emit_v3_Array_elem_r_rr(ValueKind.REF, xenv.tmp0, xenv.tmp1, xenv.tmp0);
-			// Check the object header on r_tmp0 against ContDecl's type ID.
-			asm.d.cmp_m_i(r_tmp0.plus(0), offsets.ContDecl_typeId);
+			// If {r_tmp1 >= 0}: get the corresponding HeapTypeDecl and do a type check.
+			// Load instance.heaptypes[r_tmp1] (a HeapTypeDecl *) into r_tmp1.
+			masm.emit_v3_Instance_heaptypes_r_r(xenv.tmp3, xenv.instance);
+			masm.emit_v3_Array_elem_r_rr(ValueKind.REF, xenv.tmp1, xenv.tmp3, xenv.tmp1);
+			// Check the object header on r_tmp1 against ContDecl's type ID.
+			asm.d.cmp_m_i(r_tmp1.plus(0), offsets.ContDecl_typeId);
 			asm.jc_rel_far(C.Z, l_is_cont);
 
 			// If reference type is not a continuation, fallthru to here and tag it with {REF_NULL}.
@@ -3926,6 +3926,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		}
 	}
 	// Generate a read of a 32-bit signed LEB.
+	// WARNING: overwrites %rcx (tmp0).
 	def genReadSleb32_inline(dest: X86_64Gpr) {
 		var done = X86_64Label.new(), sext = X86_64Label.new(), loop = X86_64Label.new();
 		asm.movd_r_i(R.RCX, 0);
