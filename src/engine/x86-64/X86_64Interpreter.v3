@@ -659,6 +659,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		asm.test_m_i(typeGpr.plus(typeTableAddr), TYPE_HAS_IMM | TYPE_IS_LEB);
 		genConditionalJumpDeferred(C.NZ, fun retpoint {
 			// slowpath: handle extended LEB, types with immediates, and abstract types
+			// TODO[ref_u64]: check for cont ref
 			var type_not_leb = X86_64Label.new();
 			asm.d.test_r_i(typeGpr, LEB_UPPER_BIT);		// check for LEB first
 			asm.jc_rel_near(C.Z, type_not_leb);
@@ -668,7 +669,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			var typeTableAddr = int.!((ic.start + typeTagTableOffset) - Pointer.NULL);
 			asm.d.test_m_i(typeGpr.plus(typeTableAddr), TYPE_HAS_IMM);
 			asm.jc_rel_far(C.Z, retpoint);
-			genSkipLeb0(r_tmp4);			// skip offset
+			genSkipLeb0(r_tmp4);
 			asm.jmp_rel_near(retpoint);
 		});
 
@@ -678,7 +679,8 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		asm.jc_rel_near(C.Z, done2);
 		asm.bind(start2);
 		genTagPushR(typeGpr);			// *(sp) = type
-		asm.movq_m_i(vsph[0].value, 0);		// *(sp + 8) = 0
+		asm.movq_m_i(vsph[0].value, 0);		// *(sp).value_low8 = 0
+		asm.movq_m_i(vsph[0].value.plus(8), 0);	// *(sp).value_high8 = 0 (cont version / V128 high)
 		incrementVsp();	// sp += 1 slot
 		// gen: while (--num != 0)
 		asm.d.dec_r(numGpr);
@@ -707,7 +709,8 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 				asm.jc_rel_far(C.GE, retpoint);
 				asm.movbzx_r_m(r_tag, r_start.plus(0));
 				genTagPushR(r_tag);			// *(sp) = type
-				asm.movq_m_i(vsph[0].value, 0);		// *(sp + 8) = 0
+				asm.movq_m_i(vsph[0].value, 0);		// *(sp).value_low8 = 0
+				asm.movq_m_i(vsph[0].value.plus(8), 0);	// *(sp).value_high8 = 0
 				incrementVsp();	// sp += 1 slot
 				// gen: while (--num != 0)
 				asm.q.inc_r(r_start);
@@ -2369,35 +2372,20 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			endHandler();
 		}
 		bindHandler(Opcode.REF_NULL); {
-			var l_is_cont = X86_64Label.new(), l_not_cont = X86_64Label.new();
-			// Read LEB into r_tmp1.
+			var l_is_cont = X86_64Label.new();
+			// Read the heap-type SLEB into r_tmp1 and dispatch on cont-ness.
 			genReadSleb32_inline(r_tmp1);
-			// If {r_tmp1 < 0}: check against heap type code.
-			asm.d.cmp_r_i(r_tmp1, BpHeapTypeCode.CONTREF.val);
-			asm.jc_rel_near(C.Z, l_is_cont);
-			asm.d.cmp_r_i(r_tmp1, BpHeapTypeCode.NOCONT.val);
-			asm.jc_rel_near(C.Z, l_is_cont);
-			// Any other negative value is a heap type that isn't a continuation.
-			asm.d.cmp_r_i(r_tmp1, 0);
-			asm.jc_rel_near(C.S, l_not_cont);
+			genJumpIfContHeapType(xenv.tmp1, xenv.tmp3, l_is_cont);
 
-			// If {r_tmp1 >= 0}: get the corresponding HeapTypeDecl and do a type check.
-			// Load instance.heaptypes[r_tmp1] (a HeapTypeDecl *) into r_tmp1.
-			masm.emit_v3_Instance_heaptypes_r_r(xenv.tmp3, xenv.instance);
-			masm.emit_v3_Array_elem_r_rr(ValueKind.REF, xenv.tmp1, xenv.tmp3, xenv.tmp1);
-			// Check the object header on r_tmp1 against ContDecl's type ID.
-			asm.d.cmp_m_i(r_tmp1.plus(0), offsets.ContDecl_typeId);
-			asm.jc_rel_far(C.Z, l_is_cont);
-
-			// If reference type is not a continuation, fallthru to here and tag it with {REF_NULL}.
-			asm.bind(l_not_cont); {
+			// Fallthru: not a continuation -> tag the slot with {REF_NULL}.
+			{
 				genTagPush(BpTypeCode.REF_NULL.code);
 				asm.movq_m_i(vsph[0].value, 0);
 				asm.movq_m_i(vsph[0].value.plus(8), 0);
 				incrementVsp();
 				endHandler();
 			}
-			// If reference type is a continuation, tag it with {CONTREF}.
+			// If reference type is a continuation, tag the slot with {CONTREF}.
 			asm.bind(l_is_cont); {
 				genTagPush(BpTypeCode.CONTREF.code);
 				asm.movq_m_i(vsph[0].value, 0);
@@ -4275,6 +4263,23 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			asm.movd_r_m(r_scratch, vsph[0].value.plus(8));
 			asm.pinsrq_s_r_i(X(reg), r_scratch, 1);
 		}
+	}
+	// Given {idx} containing a heap-type SLEB value (negative = abstract heap-type code,
+	// non-negative = index into instance.heaptypes), emits code that jumps to {is_cont_label}
+	// if the encoded type is a continuation, and falls through otherwise.
+	private def genJumpIfContHeapType(idx: Reg, scratch: Reg, is_cont_label: X86_64Label) {
+		var l_done = X86_64Label.new();
+		asm.d.cmp_r_i(G(idx), BpHeapTypeCode.CONTREF.val);
+		asm.jc_rel_near(C.Z, is_cont_label);
+		asm.d.cmp_r_i(G(idx), BpHeapTypeCode.NOCONT.val);
+		asm.jc_rel_near(C.Z, is_cont_label);
+		asm.d.cmp_r_i(G(idx), 0);
+		asm.jc_rel_near(C.S, l_done);
+		masm.emit_v3_Instance_heaptypes_r_r(scratch, xenv.instance);
+		masm.emit_v3_Array_elem_r_rr(ValueKind.REF, scratch, scratch, idx);
+		asm.d.cmp_m_i(G(scratch).plus(0), offsets.ContDecl_typeId);
+		asm.jc_rel_far(C.Z, is_cont_label);
+		asm.bind(l_done);
 	}
 	// generates cleanup code for after a child stack returns
 	private def genOnResumeFinish(skip_tag: bool) {
