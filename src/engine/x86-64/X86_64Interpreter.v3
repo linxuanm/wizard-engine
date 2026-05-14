@@ -659,7 +659,6 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		asm.test_m_i(typeGpr.plus(typeTableAddr), TYPE_HAS_IMM | TYPE_IS_LEB);
 		genConditionalJumpDeferred(C.NZ, fun retpoint {
 			// slowpath: handle extended LEB, types with immediates, and abstract types
-			// TODO[ref_u64]: check for cont ref
 			var type_not_leb = X86_64Label.new();
 			asm.d.test_r_i(typeGpr, LEB_UPPER_BIT);		// check for LEB first
 			asm.jc_rel_near(C.Z, type_not_leb);
@@ -669,6 +668,8 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			var typeTableAddr = int.!((ic.start + typeTagTableOffset) - Pointer.NULL);
 			asm.d.test_m_i(typeGpr.plus(typeTableAddr), TYPE_HAS_IMM);
 			asm.jc_rel_far(C.Z, retpoint);
+			// ip -> immediate
+			// TODO[ref_u64]: read SLEB and check for cont ref
 			genSkipLeb0(r_tmp4);
 			asm.jmp_rel_near(retpoint);
 		});
@@ -679,6 +680,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		asm.jc_rel_near(C.Z, done2);
 		asm.bind(start2);
 		genTagPushR(typeGpr);			// *(sp) = type
+		// TODO[ref_u64]: xmm register
 		asm.movq_m_i(vsph[0].value, 0);		// *(sp).value_low8 = 0
 		asm.movq_m_i(vsph[0].value.plus(8), 0);	// *(sp).value_high8 = 0 (cont version / V128 high)
 		incrementVsp();	// sp += 1 slot
