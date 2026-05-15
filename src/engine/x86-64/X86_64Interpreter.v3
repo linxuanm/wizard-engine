@@ -639,7 +639,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 
 		callEntryOffset = w.pos;
 		// Decode locals and initialize them. (XXX: special-case 0 locals)
-		var countGpr = r_tmp0;
+		var countGpr = r_tmp4;
 		genReadUleb32(countGpr);
 		var start = X86_64Label.new(), done = X86_64Label.new();
 		// gen: if (count != 0) do
@@ -662,7 +662,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			var type_not_leb = X86_64Label.new();
 			asm.d.test_r_i(typeGpr, LEB_UPPER_BIT);		// check for LEB first
 			asm.jc_rel_near(C.Z, type_not_leb);
-			genSkipLeb0(r_tmp4);
+			genSkipLeb0(r_tmp0);
 			asm.bind(type_not_leb);
 			// check for types that have an immediate
 			var typeTableAddr = int.!((ic.start + typeTagTableOffset) - Pointer.NULL);
@@ -670,7 +670,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			asm.jc_rel_far(C.Z, retpoint);
 			// ip -> immediate
 			// TODO[ref_u64]: read SLEB and check for cont ref
-			genSkipLeb0(r_tmp4);
+			genSkipLeb0(r_tmp0);
 			asm.jmp_rel_near(retpoint);
 		});
 
