@@ -668,9 +668,15 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			var typeTableAddr = int.!((ic.start + typeTagTableOffset) - Pointer.NULL);
 			asm.d.test_m_i(typeGpr.plus(typeTableAddr), TYPE_HAS_IMM);
 			asm.jc_rel_far(C.Z, retpoint);
-			// ip -> immediate
-			// TODO[ref_u64]: read SLEB and check for cont ref
-			genSkipLeb0(r_tmp0);
+			// {ip} now points at the immediate parameter of the type.
+			// Read the heap-type SLEB tag the slot with CONTREF if it is a continuation type, else REF_NULL.
+			genReadSleb32_inline(r_tmp3);
+			var l_is_cont = X86_64Label.new();
+			genJumpIfContHeapType(xenv.tmp3, xenv.tmp0, l_is_cont);
+			asm.movd_r_i(typeGpr, BpTypeCode.REF_NULL.code);
+			asm.jmp_rel_near(retpoint);
+			asm.bind(l_is_cont);
+			asm.movd_r_i(typeGpr, BpTypeCode.CONTREF.code);
 			asm.jmp_rel_near(retpoint);
 		});
 
