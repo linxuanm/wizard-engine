@@ -32,6 +32,8 @@ component X86_64CompressionTest {
 			("many_vals", test_many_vals),
 			("pc_variety", test_pc_variety),
 			("multi_func", test_multi_func),
+			("offset_preserved", test_offset_preserved),
+			("offset_survives_gc", test_offset_survives_gc),
 			("val_i32", test_val_i32),
 			("val_i64", test_val_i64),
 			("val_f32", test_val_f32),
@@ -55,6 +57,7 @@ component X86_64CompressionTest {
 			("single", test_spc_single),
 			("chain", test_spc_chain),
 			("mixed", test_spc_mixed),
+			("inlined_instance_cleared", test_spc_inlined_instance_cleared),
 			("vals", test_spc_vals),
 			("pc_is_derived", test_spc_pc_is_derived),
 			("bug_curpc", test_bug_spc_curpc)
@@ -119,14 +122,18 @@ class X86_64CompressionTester extends ExeTester {
 		return u64.view(entry - Pointer.NULL);
 	}
 
-	// Build an interpreter frame. {bytecode_ip} is pinned to {code + pc + 1} because the
-	// interpreter's ip points just past the opcode byte: {X86_64Interpreter.computePCFromFrame}
+	// Build an interpreter frame with an explicit resume offset.
+	def makeIntFrameAt(f: WasmFunction, pc: int, offset: int, vals: Array<Value>) -> RelocatableFrame {
+		return RelocatableFrame(WasmFrameData(f, pc, intRetAddr(), vals), false, offset);
+	}
+	// Build an interpreter frame. The resume offset is pinned to {pc + 1}, which is where the
+	// interpreter's ip sits while the opcode at {pc} executes: {X86_64Interpreter.computePCFromFrame}
 	// derives the pc as {ip - code - 1} in builds where {FeatureDisable.stacktraces} is set, and
-	// reads the {curpc} slot otherwise. Keeping the two consistent makes these tests valid under
-	// both configurations, and is the invariant {writeFrames} must preserve.
+	// reads the {curpc} slot otherwise, so this keeps these tests valid under both configurations.
+	// It is a test convention, not the production invariant -- compression carries whatever offset
+	// belongs with the captured return address (see {X86_64Compression.setNewProgramLocation}).
 	def makeIntFrame(f: WasmFunction, pc: int, vals: Array<Value>) -> RelocatableFrame {
-		var ip = Pointer.atContents(f.decl.cur_bytecode) + pc + 1;
-		return RelocatableFrame(WasmFrameData(f, pc, intRetAddr(), vals), false, u64.view(ip - Pointer.NULL));
+		return makeIntFrameAt(f, pc, pc + 1, vals);
 	}
 	// Build an SPC frame. SPC frames carry no stored pc: {writeFrames} never writes one and
 	// {readFrames} derives it from the return address via {X86_64SpcModuleCode.lookupTopPc}, which
@@ -333,6 +340,49 @@ def test_val_mixed(t: X86_64CompressionTester) {
 	]);
 }
 
+// ===== Bytecode resume offset =====
+
+// The resume point is carried verbatim, including offsets that land strictly inside an
+// instruction's immediates -- which is where the interpreter's ip sits when a frame is captured
+// mid-execution, and is not recoverable from {pc} without re-decoding the instruction.
+def test_offset_preserved(t: X86_64CompressionTester) {
+	t.sig(SigCache.v_v).codev([
+		u8.!(Opcode.I32_CONST.code), 0x80, 0x80, 0x01,	// 3-byte LEB immediate
+		u8.!(Opcode.DROP.code)
+	]);
+	var f = t.wasmFunc(0);
+	var pc = t.validPcs(f)[0];
+	var offset = pc + 3; // last byte of the immediate, before the next instruction
+	var got = t.roundtrip([t.makeIntFrameAt(f, pc, offset, [])]);
+	FrameAsserts.assert_length(t.t, 1, got.length, "frames");
+	if (got[0].bytecode_offset != offset) {
+		t.t.fail2("expected bytecode_offset=%d, got %d", offset, got[0].bytecode_offset);
+	}
+}
+
+// The resume point is an offset, not a pointer, so it is re-based onto the current bytecode array
+// when the frame is installed. A raw pointer captured before a collection would leave {ip} pointing
+// into the old array while {code} points at the new one.
+def test_offset_survives_gc(t: X86_64CompressionTester) {
+	var f = t.emptyFunc();
+	var frames = t.intChain(3);
+	Target.forceGC();
+
+	var s = t.stack();
+	X86_64Compression.writeFrames(s, frames);
+	var h = t.topHandle(s);
+	if (!X86_64FrameHandle.Interpreter.?(h)) return t.t.fail("expected an interpreter frame on top");
+	var ih = X86_64FrameHandle.Interpreter.!(h);
+	var code = f.decl.cur_bytecode; // read after the collection
+	if (ih.code() != code) return t.t.fail("expected the frame to hold the current bytecode array");
+	var expected = Pointer.atContents(code) + frames[frames.length - 1].bytecode_offset;
+	if (ih.ip() != expected) {
+		t.t.fail2("expected ip=0x%x, got ip=0x%x",
+			u64.view(expected - Pointer.NULL), u64.view(ih.ip() - Pointer.NULL));
+	}
+	t.assert_frames_eq(frames, X86_64Compression.readFrames(s));
+}
+
 // ===== Stack hygiene =====
 
 // Writing a shorter frame set over a longer one must not leave the tail of the old set reachable.
@@ -415,6 +465,37 @@ def test_spc_mixed(t: X86_64CompressionTester) {
 	t.assert_roundtrip(frames);
 }
 
+// {inlined_instance} (+40) aliases the interpreter's {stp} slot, which holds an interior pointer
+// into a sidetable {Array<int>}, and {X86_64SpcCode.scanFrame} rescans +40 as an {Instance} root.
+// Writing an SPC frame over the residue of an interpreter frame must therefore clear it, exactly as
+// the SPC prologue does; otherwise the next collection relocates a bogus root.
+def test_spc_inlined_instance_cleared(t: X86_64CompressionTester) {
+	var f = t.emptyFunc();
+	var s = t.stack();
+	var n = 4;
+	X86_64Compression.writeFrames(s, t.intChain(n));
+	var top = t.topHandle(s);
+	if (!X86_64FrameHandle.Interpreter.?(top)) return t.t.fail("setup: expected an interpreter frame");
+	if (X86_64FrameHandle.Interpreter.!(top).stp() == Pointer.NULL) {
+		return t.t.fail("setup: expected the interpreter frame to store a sidetable pointer");
+	}
+
+	var spc = Array<RelocatableFrame>.new(n);
+	for (i < n) spc[i] = t.makeSpcFrame(f, []);
+	X86_64Compression.writeFrames(s, spc);
+
+	// Frames are {X86_64InterpreterFrame.size} apart plus the return address between them; values
+	// live on the separate value stack, so the stride does not depend on how many there are.
+	var sfp = s.rsp + Pointer.SIZE;
+	for (i < n) {
+		if (X86_64FrameHandle.Spc(sfp).inlined_instance() != null) {
+			return t.t.fail1("frame[%d]: expected inlined_instance to be cleared", i);
+		}
+		sfp += X86_64InterpreterFrame.size + Pointer.SIZE;
+	}
+	Target.forceGC(); // the stack is a GC root; a stale +40 would be scanned here
+}
+
 def test_spc_vals(t: X86_64CompressionTester) {
 	var obj = HeapObject.new(null, []);
 	t.assert_roundtrip([t.makeSpcFrame(t.emptyFunc(), [
@@ -457,8 +538,11 @@ def test_bug_root_params_state(t: X86_64CompressionTester) {
 // which SPC frames use on trap and inlined-frame paths. Writing an SPC frame over the residue of an
 // interpreter frame therefore leaves the old pc behind.
 def test_bug_spc_curpc(t: X86_64CompressionTester) {
-	var f = t.emptyFunc();
-	var stale_pc = 3;
+	t.sig(SigCache.v_v).codev([
+		u8.!(Opcode.NOP.code), u8.!(Opcode.NOP.code), u8.!(Opcode.NOP.code)
+	]);
+	var f = t.wasmFunc(0);
+	var stale_pc = t.validPcs(f)[2]; // a real pc, so the frame's resume offset stays in bounds
 	var s = t.stack();
 	X86_64Compression.writeFrames(s, [t.makeIntFrame(f, stale_pc, [Value.I32(1)])]);
 	if (t.topHandle(s).curpc() != stale_pc) return t.t.fail("setup: expected the interpreter frame to store its pc");

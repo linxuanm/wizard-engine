@@ -31,6 +31,9 @@ component X86_64Compression {
 		to.rsp += Pointer.SIZE;
 
 		for (f in frames) {
+			// The sidetable lookup allocates, so it must run before {rsp} moves over the new frame (due to GC).
+			var stp = if(f.is_spc, 0, SidetableMap.new(f.data.func.decl)[f.data.pc]);
+
 			// Interpreter and SPC frames share the 104-byte footprint.
 			to.rsp += -X86_64InterpreterFrame.size;
 			var h: X86_64FrameHandle;
@@ -40,10 +43,8 @@ component X86_64Compression {
 				h = sh;
 			} else {
 				var ih = X86_64FrameHandle.Interpreter(to.rsp);
-				var map = SidetableMap.new(f.data.func.decl);
-				var stp = map[f.data.pc];
 				setFrameContext(ih, f.data.func);
-				setNewProgramLocation(ih, f.data.func.decl, f.data.pc, stp, Pointer.NULL + i64.view(f.bytecode_ip));
+				setNewProgramLocation(ih, f.data.func.decl, f.data.pc, stp, f.bytecode_offset);
 				h = ih;
 			}
 
@@ -67,15 +68,16 @@ component X86_64Compression {
 		var ret_addr = frame.srp().load<Pointer>();
 		var is_spc = X86_64SpcCode.?(RiRuntime.findUserCode(ret_addr));
 
-		// {bytecode_ip} is interpreter-only; SPC derives its pc from the return address.
+		// {bytecode_offset} is interpreter-only; SPC derives its pc from the return address.
 		var h: X86_64FrameHandle;
-		var bytecode_ip = Pointer.NULL;
+		var bytecode_offset = 0;
 		if (is_spc) {
 			h = X86_64FrameHandle.Spc(accessor.sfp());
 		} else {
 			var ih = X86_64FrameHandle.Interpreter(accessor.sfp());
 			h = ih;
-			bytecode_ip = ih.ip();
+			// Relative to the frame's own {code} slot: the array this frame is executing.
+			bytecode_offset = int.!(ih.ip() - Pointer.atContents(ih.code()));
 		}
 
 		var values = Vector<Value>.new();
@@ -86,7 +88,7 @@ component X86_64Compression {
 		}
 
 		var data = WasmFrameData(func, pc, u64.view(ret_addr - Pointer.NULL), values.extract());
-		return RelocatableFrame(data, is_spc, u64.view(bytecode_ip - Pointer.NULL));
+		return RelocatableFrame(data, is_spc, bytecode_offset);
 	}
 
 	def setFrameContext(h: X86_64FrameHandle.Interpreter, wf: WasmFunction) {
@@ -107,18 +109,24 @@ component X86_64Compression {
 		h.set_wasm_func(wf);
 		h.set_instance(wf.instance);
 		h.set_accessor(null);
+		// Cleared too, to stay consistent with SPC prologue (and avoid being scanned).
+		h.set_inlined_instance(null);
 		if (module.memories.length > 0) {
 			var memory = NativeWasmMemory.!(wf.instance.memories[0]);
 			h.set_mem0_base(memory.start);
 		}
 	}
 
-	def setNewProgramLocation(h: X86_64FrameHandle.Interpreter, func: FuncDecl, pc: int, stp: int, bytecode_ip: Pointer) {
+	// {bytecode_offset} is the byte offset into {func.cur_bytecode} at which this frame resumes (to prevent incorrect GC scan).
+	def setNewProgramLocation(h: X86_64FrameHandle.Interpreter, func: FuncDecl, pc: int, stp: int, bytecode_offset: int) {
 		var code = func.cur_bytecode;
+		if (u32.view(bytecode_offset) > u32.view(code.length)) {
+			System.error("StackCompressionError", "bytecode offset out of bounds");
+		}
 		h.set_func_decl(func);
 		h.set_curpc(pc);
 		h.set_code(code);
-		h.set_ip(bytecode_ip);
+		h.set_ip(Pointer.atContents(code) + bytecode_offset);
 		h.set_eip(Pointer.atContents(code) + code.length);
 		var st_entries = func.sidetable.entries;
 		var st_ptr = if(stp == st_entries.length, Pointer.atContents(st_entries), Pointer.atElement(func.sidetable.entries, stp));
