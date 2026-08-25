@@ -10,6 +10,10 @@
 def NAIVE = NaiveCompressionStrategy.new();
 def PACKED = PackedCompressionStrategy.new();
 
+// A heap object to park in ref-typed value slots, built the same way {CompressionTest.v3} builds one.
+def EMPTY_STRUCT = StructDecl.new(false, ValueTypes.NO_HEAPTYPES, []);
+def newObject = ObjectModel.newStructFromValues(EMPTY_STRUCT, _);
+
 def newIntTester(t: Tester) -> X86_64CompressionTester {
 	return X86_64CompressionTester.new(t, X86_64InterpreterOnlyStrategy.new());
 }
@@ -46,10 +50,10 @@ component X86_64CompressionTest {
 			("val_mixed", test_val_mixed),
 			("rewrite_shrinks", test_rewrite_shrinks),
 			("accessor_cleared", test_accessor_cleared),
+			("root_params_state", test_root_params_state),
 			("pipeline_naive", test_pipeline_naive),
 			("pipeline_packed", test_pipeline_packed),
-			("pipeline_stack", test_pipeline_stack),
-			("bug_root_params_state", test_bug_root_params_state)
+			("pipeline_stack", test_pipeline_stack)
 			]) {
 			UnitTests.registerT("x86compress:", test.0, newIntTester, test.1);
 		}
@@ -60,7 +64,7 @@ component X86_64CompressionTest {
 			("inlined_instance_cleared", test_spc_inlined_instance_cleared),
 			("vals", test_spc_vals),
 			("pc_is_derived", test_spc_pc_is_derived),
-			("bug_curpc", test_bug_spc_curpc)
+			("curpc", test_spc_curpc)
 			]) {
 			UnitTests.registerT("x86compress:spc:", test.0, newSpcTester, test.1);
 		}
@@ -296,7 +300,7 @@ def test_val_ref_null(t: X86_64CompressionTester) {
 // every reference and {readValue} reconstructs I31-vs-Ref from the low bit of the payload, so a
 // funcref slot reads back indistinguishable from an anyref slot.
 def test_val_ref_obj(t: X86_64CompressionTester) {
-	var a = HeapObject.new(null, []);
+	var a = newObject([]);
 	var b = HostObject.new();
 	var vals: Array<Value> = [Value.Ref(a), Value.Ref(b), Value.Ref(null), Value.Ref(a)];
 	var got = t.roundtrip([t.makeIntFrame(t.emptyFunc(), 1, vals)]);
@@ -332,7 +336,7 @@ def test_val_cont(t: X86_64CompressionTester) {
 
 // Every value kind adjacent in one frame, catching any slot-size or tag-offset mistake.
 def test_val_mixed(t: X86_64CompressionTester) {
-	var obj = HeapObject.new(null, []);
+	var obj = newObject([]);
 	t.assert_roundtrip_vals([
 		Value.I32(1), Value.I64(2), Value.F32(3), Value.F64(4),
 		Value.V128(5, 6), Value.Ref(obj), Value.Ref(null), Value.I31(7),
@@ -405,6 +409,22 @@ def test_accessor_cleared(t: X86_64CompressionTester) {
 
 	X86_64Compression.writeFrames(s, frames);
 	if (t.topHandle(s).accessor() != null) t.t.fail("expected writeFrames to clear the accessor slot");
+}
+
+// A stack reconstructed mid-execution has no pending root parameters: they are already installed
+// inside the root frame's values. It must therefore come back {RESUMABLE} with {params_arity == 0},
+// and without the enter-func stub a fresh invocation would start at.
+def test_root_params_state(t: X86_64CompressionTester) {
+	t.sig(SigCache.ii_i).codev([
+		u8.!(Opcode.LOCAL_GET.code), 0,
+		u8.!(Opcode.LOCAL_GET.code), 1,
+		u8.!(Opcode.I32_ADD.code)
+	]);
+	var f = t.wasmFunc(0);
+	var s = t.stack();
+	X86_64Compression.writeFrames(s, [t.makeIntFrame(f, t.validPcs(f)[0], [Value.I32(1), Value.I32(2)])]);
+	if (s.params_arity != 0) t.t.fail1("expected no pending root parameters, got params_arity=%d", s.params_arity);
+	if (s.state() != StackState.RESUMABLE) t.t.fail1("expected a RESUMABLE stack, got %s", s.state().name);
 }
 
 // ===== Full pipeline =====
@@ -497,7 +517,7 @@ def test_spc_inlined_instance_cleared(t: X86_64CompressionTester) {
 }
 
 def test_spc_vals(t: X86_64CompressionTester) {
-	var obj = HeapObject.new(null, []);
+	var obj = newObject([]);
 	t.assert_roundtrip([t.makeSpcFrame(t.emptyFunc(), [
 		Value.I32(1), Value.I64(2), Value.F32(3), Value.F64(4),
 		Value.V128(5, 6), Value.Ref(obj), Value.I31(7)
@@ -514,30 +534,10 @@ def test_spc_pc_is_derived(t: X86_64CompressionTester) {
 	if (got[0].data.pc != -1) t.t.fail1("expected the supplied pc to be discarded, got pc=%d", got[0].data.pc);
 }
 
-// ===== Known bugs =====
-// These fail today. Each pins behavior that {X86_64Compression} should provide.
-
-// BUG: {writeFrames} calls {X86_64Stack.reset}, which sets {params_arity} from the root function's
-// signature and derives the state from it. A stack reconstructed mid-execution has no pending root
-// parameters, so it should come back resumable; today a root function with parameters yields a
-// SUSPENDED stack that cannot be resumed.
-def test_bug_root_params_state(t: X86_64CompressionTester) {
-	t.sig(SigCache.ii_i).codev([
-		u8.!(Opcode.LOCAL_GET.code), 0,
-		u8.!(Opcode.LOCAL_GET.code), 1,
-		u8.!(Opcode.I32_ADD.code)
-	]);
-	var f = t.wasmFunc(0);
-	var s = t.stack();
-	X86_64Compression.writeFrames(s, [t.makeIntFrame(f, t.validPcs(f)[0], [Value.I32(1), Value.I32(2)])]);
-	if (s.params_arity != 0) t.t.fail1("expected no pending root parameters, got params_arity=%d", s.params_arity);
-	if (s.state() != StackState.RESUMABLE) t.t.fail1("expected a RESUMABLE stack, got %s", s.state().name);
-}
-
-// BUG: {setSpcFrameContext} writes wasm_func, instance, accessor and mem0_base but not {curpc},
-// which SPC frames use on trap and inlined-frame paths. Writing an SPC frame over the residue of an
-// interpreter frame therefore leaves the old pc behind.
-def test_bug_spc_curpc(t: X86_64CompressionTester) {
+// A reconstructed SPC frame carries its own pc in {curpc}, so the residue of a recycled frame cannot
+// be mistaken for it. Note this is stricter than SPC itself: the SPC prologue leaves {curpc}
+// uninitialized and the compiler writes it only out-of-line, on trap and inlined-frame paths.
+def test_spc_curpc(t: X86_64CompressionTester) {
 	t.sig(SigCache.v_v).codev([
 		u8.!(Opcode.NOP.code), u8.!(Opcode.NOP.code), u8.!(Opcode.NOP.code)
 	]);
@@ -547,8 +547,9 @@ def test_bug_spc_curpc(t: X86_64CompressionTester) {
 	X86_64Compression.writeFrames(s, [t.makeIntFrame(f, stale_pc, [Value.I32(1)])]);
 	if (t.topHandle(s).curpc() != stale_pc) return t.t.fail("setup: expected the interpreter frame to store its pc");
 
+	// {makeSpcFrame} builds with pc = -1, the sentinel for a return address that is not a registered
+	// call site, which is what this frame's pc reads back as.
 	X86_64Compression.writeFrames(s, [t.makeSpcFrame(f, [Value.I32(1)])]);
-	if (t.topHandle(s).curpc() == stale_pc) {
-		t.t.fail1("SPC frame kept the stale curpc=%d of the interpreter frame it overwrote", stale_pc);
-	}
+	var got = t.topHandle(s).curpc();
+	if (got != -1) t.t.fail1("expected the SPC frame to carry curpc=-1, got %d", got);
 }

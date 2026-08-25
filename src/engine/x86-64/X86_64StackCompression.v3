@@ -26,9 +26,7 @@ component X86_64Compression {
 		if (frames.length == 0) return; // nothing to install; leave {to} empty
 		var root_func = frames[0].data.func;
 		var instance = root_func.instance;
-		to.reset(instance.functions[root_func.decl.func_index]);
-		// reset() pushed the enter-func-stub; pop it because we're installing real frames.
-		to.rsp += Pointer.SIZE;
+		to.resetWithState(instance.functions[root_func.decl.func_index], 0, false);
 
 		for (f in frames) {
 			// The sidetable lookup allocates, so it must run before {rsp} moves over the new frame (due to GC).
@@ -39,7 +37,7 @@ component X86_64Compression {
 			var h: X86_64FrameHandle;
 			if (f.is_spc) {
 				var sh = X86_64FrameHandle.Spc(to.rsp);
-				setSpcFrameContext(sh, f.data.func);
+				setSpcFrameContext(sh, f.data.func, f.data.pc);
 				h = sh;
 			} else {
 				var ih = X86_64FrameHandle.Interpreter(to.rsp);
@@ -104,11 +102,16 @@ component X86_64Compression {
 	}
 
 	// SPC layout has no sidetable slot, so it is omitted here.
-	def setSpcFrameContext(h: X86_64FrameHandle.Spc, wf: WasmFunction) {
+	// {pc} is what {readFrames} derived from the frame's return address, and is written into {curpc}
+	// so that a reconstructed frame describes its own program location. SPC's own prologue leaves
+	// {curpc} uninitialized -- the compiler only stores it out-of-line, in trap stubs and when
+	// materializing inlined frames -- so this is a stricter guarantee than SPC itself provides, and it
+	// keeps the residue of a recycled frame from being mistaken for this frame's pc.
+	def setSpcFrameContext(h: X86_64FrameHandle.Spc, wf: WasmFunction, pc: int) {
 		var module = wf.instance.module;
 		h.set_wasm_func(wf);
 		h.set_instance(wf.instance);
-		h.set_accessor(null);
+		h.writeSpcState(pc); // sets curpc and clears the accessor slot
 		// Cleared too, to stay consistent with SPC prologue (and avoid being scanned).
 		h.set_inlined_instance(null);
 		if (module.memories.length > 0) {
