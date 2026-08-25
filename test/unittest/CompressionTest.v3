@@ -112,11 +112,28 @@ class CompressionTester(t: Tester, adapter: CompressionStrategyAdapter) {
 	}
 
 	def assert_length(expected: int, got: int, what: string) {
-		if (expected != got) t.fail3("expected %d %s, got %d", expected, what, got);
+		FrameAsserts.assert_length(t, expected, got, what);
 	}
 
 	def assert_vals_eq(expected: Array<Value>, got: Array<Value>) {
-		assert_length(expected.length, got.length, "values");
+		FrameAsserts.assert_vals_eq(t, expected, got);
+	}
+
+	def assert_frames_eq(expected: Array<RelocatableFrame>, got: Array<RelocatableFrame>) {
+		FrameAsserts.assert_frames_eq(t, expected, got);
+	}
+}
+
+// Assertions over {RelocatableFrame} arrays. Shared between the target-independent strategy tests
+// in this file and the x86-64 backend tests in {test/unittest/x86-64-linux/X86_64CompressionTest.v3},
+// which cannot inherit them because their tester extends {ExeTester}.
+component FrameAsserts {
+	def assert_length(t: Tester, expected: int, got: int, what: string) {
+		if (expected != got) t.fail3("expected %d %s, got %d", expected, what, got);
+	}
+
+	def assert_vals_eq(t: Tester, expected: Array<Value>, got: Array<Value>) {
+		assert_length(t, expected.length, got.length, "values");
 		for (i < expected.length) {
 			if (expected[i] != got[i]) {
 				t.fail3("value[%d]: expected %q, got %q",
@@ -125,8 +142,8 @@ class CompressionTester(t: Tester, adapter: CompressionStrategyAdapter) {
 		}
 	}
 
-	def assert_frames_eq(expected: Array<RelocatableFrame>, got: Array<RelocatableFrame>) {
-		assert_length(expected.length, got.length, "frames");
+	def assert_frames_eq(t: Tester, expected: Array<RelocatableFrame>, got: Array<RelocatableFrame>) {
+		assert_length(t, expected.length, got.length, "frames");
 		for (i < expected.length) {
 			var e = expected[i], g = got[i];
 			if (e.data.func != g.data.func) t.fail1("frame[%d]: func mismatch", i);
@@ -134,7 +151,7 @@ class CompressionTester(t: Tester, adapter: CompressionStrategyAdapter) {
 			if (e.is_spc != g.is_spc) t.fail3("frame[%d]: expected is_spc=%z, got is_spc=%z", i, e.is_spc, g.is_spc);
 			if (e.data.ret_addr != g.data.ret_addr) t.fail3("frame[%d]: expected ret_addr=0x%x, got ret_addr=0x%x", i, e.data.ret_addr, g.data.ret_addr);
 			if (e.bytecode_ip != g.bytecode_ip) t.fail3("frame[%d]: expected bytecode_ip=0x%x, got bytecode_ip=0x%x", i, e.bytecode_ip, g.bytecode_ip);
-			assert_vals_eq(e.data.vals, g.data.vals);
+			assert_vals_eq(t, e.data.vals, g.data.vals);
 		}
 	}
 }
