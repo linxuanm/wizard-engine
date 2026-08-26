@@ -59,7 +59,8 @@ component X86_64CompressionTest {
 			("unstarted_stack", test_unstarted_stack),
 			("is_spc_ret_addr_agree", test_is_spc_ret_addr_agree),
 			("ip_not_at_eip", test_ip_not_at_eip),
-			("stp_at_end", test_stp_at_end)
+			("stp_at_end", test_stp_at_end),
+			("write_over_live_stack", test_write_over_live_stack)
 			]) {
 			UnitTests.registerT("x86compress:", test.0, newIntTester, test.1);
 		}
@@ -74,6 +75,12 @@ component X86_64CompressionTest {
 			]) {
 			UnitTests.registerT("x86compress:spc:", test.0, newSpcTester, test.1);
 		}
+		// Registered last: this one aborts the runner instead of failing an assertion.
+		// Run order is registration order, so everything registered after it is masked --
+		// in a full run that is the 15 tests {X86_64LinuxExeTest} registers
+		// ({int:dyn:*}, {spc:aot:*}, {spc:lazy:*}), all of which pass. Run them with any
+		// glob that excludes this test, or run this one alone by name.
+		UnitTests.registerT("x86compress:", "dynamic_func_index", newIntTester, test_dynamic_func_index);
 	}
 }
 
@@ -666,4 +673,60 @@ def test_stp_at_end(t: X86_64CompressionTester) {
 	// Mirrors {X86_64FrameAccessor.stp}, which is what every consumer of this slot uses.
 	var got = int.!((ih.stp() - Pointer.atContents(entries)) / 4);
 	if (got != stp) t.t.fail2("expected sidetable position %d, got %d", stp, got);
+}
+
+// {reset}, {bind} and {resume} all guard their preconditions with {checkState}, so a stack that is
+// still live cannot be repurposed by accident. {writeFrames} loses that property: it opens with
+// {clear()}, which force-sets {EMPTY} with no state check of its own, so {resetWithState}'s
+// {checkState(EMPTY)} can never fire. Handing {Target.writeFramesToStack} a stack someone else
+// still holds -- a bound continuation, or the running stack -- silently overwrites it in place
+// instead of aborting the way {reset} would have.
+def test_write_over_live_stack(t: X86_64CompressionTester) {
+	t.sig(SigCache.ii_i).codev([
+		u8.!(Opcode.LOCAL_GET.code), 0,
+		u8.!(Opcode.LOCAL_GET.code), 1,
+		u8.!(Opcode.I32_ADD.code)
+	]);
+	var f = t.wasmFunc(0);
+
+	// A stack awaiting its arguments, exactly as {cont.new} leaves one.
+	var s = X86_64StackManager.getFreshStack();
+	s.reset(f);
+	if (s.params_arity != 2 || s.state() != StackState.SUSPENDED) {
+		return t.t.fail1("setup: expected a SUSPENDED stack awaiting 2 arguments, got %s", s.state().name);
+	}
+
+	X86_64Compression.writeFrames(s, [t.makeIntFrame(f, t.validPcs(f)[0], [Value.I32(1), Value.I32(2)])]);
+
+	if (s.params_arity != 2) {
+		t.t.fail2("writeFrames overwrote a live stack in place: params_arity %d -> %d", 2, s.params_arity);
+	}
+}
+
+// {Runtime.FUNC_NEW} and {WizengModule} assign a dynamically created function
+// {func_index = module.functions.length + module.new_funcs++}. That is past the end of
+// {Instance.functions}, which is sized to {module.functions.length} and never extended for such a
+// function. {writeFrames} resolves its root as {instance.functions[root_func.decl.func_index]}, so
+// a stack whose bottom frame runs a {func.new} function takes a bounds trap. The lookup buys
+// nothing either way: {Instantiator.mapFuncDecl} is the identity for non-imported decls, so
+// {root_func} is already the object being looked up and could be passed straight through.
+//
+// Unlike the tests above, this one aborts the runner instead of failing an assertion -- the trap
+// is the finding. It is registered last so the assertion-based tests all report first.
+def test_dynamic_func_index(t: X86_64CompressionTester) {
+	t.emptyFunc(); // ensure the module has a function and the instance exists
+	var instance = t.instance();
+	var module = instance.module;
+
+	var decl = FuncDecl.new(0);
+	decl.sig = SigCache.v_v;
+	decl.setOrigCode([u8.!(Opcode.END.code)]);
+	decl.func_index = module.functions.length + module.new_funcs++;
+	var wf = WasmFunction.new(instance, decl);
+	if (decl.func_index < instance.functions.length) {
+		return t.t.fail1("setup: expected func_index %d to be outside instance.functions", decl.func_index);
+	}
+
+	X86_64Compression.writeFrames(t.stack(), [RelocatableFrame(WasmFrameData(wf, 0, t.intRetAddr(), []), false, 0)]);
+	t.t.fail1("expected writeFrames to reject func_index %d, which is outside instance.functions", decl.func_index);
 }
