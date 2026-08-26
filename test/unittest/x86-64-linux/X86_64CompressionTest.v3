@@ -53,7 +53,13 @@ component X86_64CompressionTest {
 			("root_params_state", test_root_params_state),
 			("pipeline_naive", test_pipeline_naive),
 			("pipeline_packed", test_pipeline_packed),
-			("pipeline_stack", test_pipeline_stack)
+			("pipeline_stack", test_pipeline_stack),
+			// Pinned review findings; these fail today. See "Pinned review findings" below.
+			("cont_bottom_set", test_cont_bottom_set),
+			("unstarted_stack", test_unstarted_stack),
+			("is_spc_ret_addr_agree", test_is_spc_ret_addr_agree),
+			("ip_not_at_eip", test_ip_not_at_eip),
+			("stp_at_end", test_stp_at_end)
 			]) {
 			UnitTests.registerT("x86compress:", test.0, newIntTester, test.1);
 		}
@@ -369,7 +375,15 @@ def test_offset_preserved(t: X86_64CompressionTester) {
 // into the old array while {code} points at the new one.
 def test_offset_survives_gc(t: X86_64CompressionTester) {
 	var f = t.emptyFunc();
-	var frames = t.intChain(3);
+	// Capture from a real stack first, so the frames carry offsets that {readFrames} produced,
+	// then collect *between* the read and the write. Forcing the collection before {readFrames}
+	// would prove nothing: no resume point has been captured yet at that point, so the assertion
+	// below would hold even if the capture stored a raw pointer.
+	var seed = t.intChain(3);
+	var src = t.stack2();
+	X86_64Compression.writeFrames(src, seed);
+	var frames = X86_64Compression.readFrames(src);
+
 	Target.forceGC();
 
 	var s = t.stack();
@@ -552,4 +566,104 @@ def test_spc_curpc(t: X86_64CompressionTester) {
 	X86_64Compression.writeFrames(s, [t.makeSpcFrame(f, [Value.I32(1)])]);
 	var got = t.topHandle(s).curpc();
 	if (got != -1) t.t.fail1("expected the SPC frame to carry curpc=-1, got %d", got);
+}
+
+// ===== Pinned review findings =====
+// Each test below fails today for the reason stated above it. They pin bugs in
+// {X86_64Compression}; none is a regression test for behavior that currently works.
+
+// Every other producer of a resumable stack establishes {cont_bottom}: {Runtime.CONT_NEW} sets it
+// to the stack itself and {unwindStackChain} sets it to the previous stack. {writeFrames} goes
+// through {clear()} + {resetWithState}, neither of which touches it, so a reconstructed stack is
+// left with whatever {cont_bottom} the stack last had -- null for a fresh one. The resume sequence
+// {emit_chain_cont_to_parent} dereferences it with no null check.
+def test_cont_bottom_set(t: X86_64CompressionTester) {
+	var s = t.stack();
+	X86_64Compression.writeFrames(s, t.intChain(2));
+	if (s.cont_bottom == null) {
+		t.t.fail("expected cont_bottom to be established on a reconstructed stack");
+	}
+}
+
+// A continuation that has not started executing -- {cont.new} then {cont.bind} -- carries its
+// target function and bound arguments on the value stack but has no Wasm frames yet, only the
+// enter-func stub. The walk collects nothing, so {readFrames} returns an empty array and both the
+// function and the arguments are lost; {writeFrames} then leaves the destination EMPTY.
+def test_unstarted_stack(t: X86_64CompressionTester) {
+	t.sig(SigCache.ii_i).codev([
+		u8.!(Opcode.LOCAL_GET.code), 0,
+		u8.!(Opcode.LOCAL_GET.code), 1,
+		u8.!(Opcode.I32_ADD.code)
+	]);
+	var f = t.wasmFunc(0);
+	var s = X86_64StackManager.getFreshStack();
+	s.reset(f);
+	s.bind([Value.I32(1), Value.I32(2)]);
+	var got = X86_64Compression.readFrames(s);
+	if (got.length == 0) {
+		t.t.fail("expected the root function and its bound arguments to be captured, got 0 frames");
+	}
+}
+
+// {writeFrames} picks the frame layout from {is_spc}, and so writes SPC-only slots, while
+// {readFrames}, {getFrameAccessorOfStack} and the GC's frame scanner all pick it from the stored
+// return address. The two are never cross-checked, so a frame claiming SPC under an interpreter
+// return address is installed with one layout and read back through the other -- which means the
+// GC rescans that frame's uninitialized sidetable and code slots as heap roots.
+def test_is_spc_ret_addr_agree(t: X86_64CompressionTester) {
+	var f = t.emptyFunc();
+	var frame = RelocatableFrame(WasmFrameData(f, -1, t.intRetAddr(), [Value.I32(1)]), true, 0);
+	var s = t.stack();
+	X86_64Compression.writeFrames(s, [frame]);
+	var installed_is_spc = X86_64SpcCode.?(RiRuntime.findUserCode(s.rsp.load<Pointer>()));
+	if (installed_is_spc != frame.is_spc) {
+		t.t.fail("writeFrames installed an SPC frame layout under an interpreter return address");
+	}
+}
+
+// The bounds check in {setNewProgramLocation} is {offset > code.length}, which accepts an offset
+// exactly at {code.length} and installs {ip == eip}, pointing one byte past the end of the array.
+// {eip} is consulted only by the END handler; the dispatch sequence loads the opcode byte at {ip}
+// unconditionally, so resuming such a frame reads past the end of the bytecode.
+def test_ip_not_at_eip(t: X86_64CompressionTester) {
+	var f = t.emptyFunc();
+	var code = f.decl.cur_bytecode;
+	var s = t.stack();
+	X86_64Compression.writeFrames(s, [t.makeIntFrameAt(f, 0, code.length, [])]);
+	var h = t.topHandle(s);
+	if (!X86_64FrameHandle.Interpreter.?(h)) return t.t.fail("expected an interpreter frame on top");
+	var ih = X86_64FrameHandle.Interpreter.!(h);
+	if (ih.ip() == ih.eip()) {
+		t.t.fail("installed ip == eip: the resume point is one past the end of the bytecode");
+	}
+}
+
+// When a frame's remaining code holds no further branches, {SidetableMap[pc]} is {entries.length},
+// one past the last entry. {setNewProgramLocation}'s guard for that case stores a pointer to
+// element 0 rather than one past the end, so the frame reports a sidetable position of 0.
+def test_stp_at_end(t: X86_64CompressionTester) {
+	// One `br` out of a block, so the sidetable holds exactly one 4-int entry.
+	t.sig(SigCache.v_v).codev([
+		u8.!(Opcode.BLOCK.code), BpTypeCode.EmptyBlock.code,
+		u8.!(Opcode.BR.code), 0,
+		u8.!(Opcode.END.code)
+	]);
+	var f = t.wasmFunc(0);
+	var entries = f.decl.sidetable.entries;
+	var map = SidetableMap.new(f.decl);
+	var pcs = t.validPcs(f);
+	var pc = pcs[pcs.length - 1]; // past the branch
+	var stp = map[pc];
+	if (stp != entries.length) {
+		return t.t.fail2("setup: expected stp=%d at the last pc, got %d", entries.length, stp);
+	}
+
+	var s = t.stack();
+	X86_64Compression.writeFrames(s, [t.makeIntFrame(f, pc, [])]);
+	var h = t.topHandle(s);
+	if (!X86_64FrameHandle.Interpreter.?(h)) return t.t.fail("expected an interpreter frame on top");
+	var ih = X86_64FrameHandle.Interpreter.!(h);
+	// Mirrors {X86_64FrameAccessor.stp}, which is what every consumer of this slot uses.
+	var got = int.!((ih.stp() - Pointer.atContents(entries)) / 4);
+	if (got != stp) t.t.fail2("expected sidetable position %d, got %d", stp, got);
 }

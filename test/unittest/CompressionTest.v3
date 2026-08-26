@@ -128,12 +128,20 @@ class CompressionTester(t: Tester, adapter: CompressionStrategyAdapter) {
 // in this file and the x86-64 backend tests in {test/unittest/x86-64-linux/X86_64CompressionTest.v3},
 // which cannot inherit them because their tester extends {ExeTester}.
 component FrameAsserts {
-	def assert_length(t: Tester, expected: int, got: int, what: string) {
-		if (expected != got) t.fail3("expected %d %s, got %d", expected, what, got);
+	// Returns {true} if the lengths match. Callers that go on to index {got} must check the
+	// result and bail: {Tester.fail} records the message and returns, it does not throw, so
+	// falling through to the loop below would index {got} out of bounds and abort the whole
+	// unittest binary instead of failing one test.
+	def assert_length(t: Tester, expected: int, got: int, what: string) -> bool {
+		if (expected != got) {
+			t.fail3("expected %d %s, got %d", expected, what, got);
+			return false;
+		}
+		return true;
 	}
 
 	def assert_vals_eq(t: Tester, expected: Array<Value>, got: Array<Value>) {
-		assert_length(t, expected.length, got.length, "values");
+		if (!assert_length(t, expected.length, got.length, "values")) return;
 		for (i < expected.length) {
 			if (expected[i] != got[i]) {
 				t.fail3("value[%d]: expected %q, got %q",
@@ -143,7 +151,7 @@ component FrameAsserts {
 	}
 
 	def assert_frames_eq(t: Tester, expected: Array<RelocatableFrame>, got: Array<RelocatableFrame>) {
-		assert_length(t, expected.length, got.length, "frames");
+		if (!assert_length(t, expected.length, got.length, "frames")) return;
 		for (i < expected.length) {
 			var e = expected[i], g = got[i];
 			if (e.data.func != g.data.func) t.fail1("frame[%d]: func mismatch", i);
