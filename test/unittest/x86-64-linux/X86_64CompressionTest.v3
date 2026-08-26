@@ -60,7 +60,8 @@ component X86_64CompressionTest {
 			("is_spc_ret_addr_agree", test_is_spc_ret_addr_agree),
 			("ip_not_at_eip", test_ip_not_at_eip),
 			("stp_at_end", test_stp_at_end),
-			("write_over_live_stack", test_write_over_live_stack)
+			("write_over_live_stack", test_write_over_live_stack),
+			("dynamic_func_index", test_dynamic_func_index)
 			]) {
 			UnitTests.registerT("x86compress:", test.0, newIntTester, test.1);
 		}
@@ -75,12 +76,6 @@ component X86_64CompressionTest {
 			]) {
 			UnitTests.registerT("x86compress:spc:", test.0, newSpcTester, test.1);
 		}
-		// Registered last: this one aborts the runner instead of failing an assertion.
-		// Run order is registration order, so everything registered after it is masked --
-		// in a full run that is the 15 tests {X86_64LinuxExeTest} registers
-		// ({int:dyn:*}, {spc:aot:*}, {spc:lazy:*}), all of which pass. Run them with any
-		// glob that excludes this test, or run this one alone by name.
-		UnitTests.registerT("x86compress:", "dynamic_func_index", newIntTester, test_dynamic_func_index);
 	}
 }
 
@@ -723,10 +718,15 @@ def test_dynamic_func_index(t: X86_64CompressionTester) {
 	decl.setOrigCode([u8.!(Opcode.END.code)]);
 	decl.func_index = module.functions.length + module.new_funcs++;
 	var wf = WasmFunction.new(instance, decl);
-	if (decl.func_index < instance.functions.length) {
-		return t.t.fail1("setup: expected func_index %d to be outside instance.functions", decl.func_index);
-	}
 
-	X86_64Compression.writeFrames(t.stack(), [RelocatableFrame(WasmFrameData(wf, 0, t.intRetAddr(), []), false, 0)]);
-	t.t.fail1("expected writeFrames to reject func_index %d, which is outside instance.functions", decl.func_index);
+	// {writeFrames} resolves its root frame as {instance.functions[func.decl.func_index]}, but
+	// {Instance.functions} is only {module.functions.length} long, so for a dynamically created
+	// function that index is out of range. Assert the precondition rather than calling
+	// {writeFrames}: the bounds trap would abort the unittest binary and mask every test
+	// registered after this one. The lookup buys nothing in the first place -- {mapFuncDecl} is
+	// the identity for non-imported decls, so {root_func} is already the object being looked up.
+	if (decl.func_index >= instance.functions.length) {
+		t.t.fail2("func_index %d is outside instance.functions (length %d), which writeFrames indexes",
+			decl.func_index, instance.functions.length);
+	}
 }
