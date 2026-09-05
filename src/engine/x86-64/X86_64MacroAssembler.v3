@@ -22,6 +22,7 @@ class X86_64MacroAssembler extends MacroAssembler {
 	var scratch: X86_64Gpr;
 	var jump_tables: Vector<(int, Array<X86_64Label>)>;
 	var trap_stubs: X86_64SpcTrapsStub;
+	var int_suspend_entry: Pointer; // set by the interpreter generator, resolved lazily otherwise
 
 	new(w, regConfig: RegConfig) super(Target.tagging, regConfig) {
 		scratch = G(regConfig.scratch);
@@ -1068,8 +1069,11 @@ class X86_64MacroAssembler extends MacroAssembler {
 		asm.movq_r_m(dst, psfp.plus(X86_64InterpreterFrame.sidetable.offset));
 		asm.q.lea(scratch, X86_64Addr.new(dst, scratch, 4, offsets.Array_contents));
 		asm.movq_m_r(psfp.plus(X86_64InterpreterFrame.stp.offset), scratch);
-		var ic = X86_64PreGenStubs.getInterpreterCode();
-		asm.movq_r_l(scratch, (ic.start + ic.header.intSuspendEntryOffset) - Pointer.NULL);
+		if (int_suspend_entry == Pointer.NULL) {
+			var ic = X86_64PreGenStubs.getInterpreterCode();
+			int_suspend_entry = ic.start + ic.header.intSuspendEntryOffset;
+		}
+		asm.movq_r_l(scratch, int_suspend_entry - Pointer.NULL);
 		asm.movq_m_r(psfp.plus(0 - Pointer.SIZE), scratch);
 		asm.bind(l_done);
 		asm.movd_r_m(dst, entry.plus(ResumeHandlerEntry.vsp_slots.offset));

@@ -9,6 +9,7 @@ class V3Offsets {
 	private def module = Module.new("<null>");
 	private def sig = SigCache.i_i;
 	private def cont_decl = ContDecl.new(false, [], HeapType.ANY);
+	private def tag = Tag.new(null, null);
 	private def decl = FuncDecl.new(0);
 	private def hinfo = decl.handlers;
 	private def i = Instance.new(module, null);
@@ -42,6 +43,9 @@ class V3Offsets {
 	def SigDecl_results		= int.view(Pointer.atField(sig.results) - Pointer.atObject(sig));
 
 	def ContDecl_sig		= int.view(Pointer.atField(cont_decl.sig) - Pointer.atObject(cont_decl));
+	def ContDecl_switch_arity	= int.view(Pointer.atField(cont_decl.switch_arity) - Pointer.atObject(cont_decl));
+
+	def Tag_sig			= int.view(Pointer.atField(tag.sig) - Pointer.atObject(tag));
 
 	def Instance_memories		= int.view(Pointer.atField(i.memories) - Pointer.atObject(i));
 	def Instance_heaptypes		= int.view(Pointer.atField(i.heaptypes) - Pointer.atObject(i));

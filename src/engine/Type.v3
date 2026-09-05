@@ -426,6 +426,8 @@ class ArrayDecl extends HeapTypeDecl {
 class ContDecl extends HeapTypeDecl {
 	var sig_ref: HeapType;
 	var sig: SigDecl;
+	// Params of the cont type in the last param: the resume arity of a stack switched out through this type.
+	var switch_arity: int = -1;
 
 	new(final: bool, supertypes: Array<HeapType>, sig_ref) super(final, supertypes) {}
 

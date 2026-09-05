@@ -232,9 +232,21 @@ class RecGroup(length: int) {
 			if (d.canon_id < 0 && cache != null) d.canon_id = ++cache.uid;
 			if (Trace.canon) Trace.OUT.put1("%q", d.render).ln();
 		}
+		for (d in done) if (ContDecl.?(d)) setSwitchArity(ContDecl.!(d));
 		// cache this recursion group if a cache has been supplied
 		if (cache != null) cache.recGroups[this] = this;
 		return done;
+	}
+	private def setSwitchArity(x: ContDecl) {
+		var params = x.sig.params;
+		if (params.length == 0) return;
+		match (params[params.length - 1]) {
+			Ref(nullable, heap) => match (heap) {
+				Cont(cont) => x.switch_arity = cont.sig.params.length;
+				_ => ;
+			}
+			_ => ;
+		}
 	}
 	private def substValueType(vt: ValueType) -> ValueType {
 		match (vt) {

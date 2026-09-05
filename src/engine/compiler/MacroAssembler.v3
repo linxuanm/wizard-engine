@@ -213,6 +213,9 @@ class MacroAssembler(valuerep: Tagging, regConfig: RegConfig) {
 	def emit_v3_SigDecl_params_r_r(dst: Reg, ptr: Reg) {
 		emit_mov_r_m(ValueKind.REF, dst, MasmAddr(ptr, getOffsets().SigDecl_params));
 	}
+	def emit_v3_Tag_sig_r_r(dst: Reg, ptr: Reg) {
+		emit_mov_r_m(ValueKind.REF, dst, MasmAddr(ptr, getOffsets().Tag_sig));
+	}
 	def emit_v3_SigDecl_results_r_r(dst: Reg, ptr: Reg) {
 		emit_mov_r_m(ValueKind.REF, dst, MasmAddr(ptr, getOffsets().SigDecl_results));
 	}
@@ -447,20 +450,28 @@ class MacroAssembler(valuerep: Tagging, regConfig: RegConfig) {
 		// contStack.cont_bottom = null;
 		emit_mov_m_i(MasmAddr(contStack, offsets.X86_64Stack_bottom), 0);
 	}
-	// Marks {cur} suspended with {prev} as its bottom. Need {arity} values to resume it.
-	def emit_suspend_stack(cur: Reg, vsp: Reg, prev: Reg, arity: int) {
+	// Marks {cur} suspended with {prev} as its bottom.
+	def emit_suspend_stack(cur: Reg, vsp: Reg, prev: Reg) {
 		var offsets = getOffsets();
 		emit_v3_set_X86_64Stack_vsp_r_r(cur, vsp);
 		emit_set_stack_state(cur, StackState.SUSPENDED);
-		emit_mov_m_i(MasmAddr(cur, offsets.X86_64Stack_params_arity), arity);
 		emit_mov_m_r(ValueKind.REF, MasmAddr(cur, offsets.X86_64Stack_bottom), prev);
 	}
 	// Copies the {n} values at {vsp} and {cont} onto {dest} at {dst}, leaving {dst} past them.
 	def emit_pass_values(dest: Reg, dst: Reg, vsp: Reg, n: int, cont: Reg, xmm: Reg) {
 		emit_value_copy_n(dst, vsp, n, xmm);
-		emit_store_continuation(dst, n * valuerep.slot_size, cont);
-		emit_addw_r_i(dst, (n + 1) * valuerep.slot_size);
+		emit_pass_cont(dest, dst, n * valuerep.slot_size, cont);
+	}
+	// Writes {cont} at {dst} + {offset} on {dest}'s value stack, leaving {dst} past it.
+	def emit_pass_cont(dest: Reg, dst: Reg, offset: int, cont: Reg) {
+		emit_store_continuation(dst, offset, cont);
+		emit_addw_r_i(dst, offset + valuerep.slot_size);
 		emit_v3_set_X86_64Stack_vsp_r_r(dest, dst);
+	}
+	// Makes {dest} the running stack.
+	def emit_activate_stack(dest: Reg) {
+		emit_set_stack_state(dest, StackState.RUNNING);
+		emit_set_curstack(dest);
 	}
 	def emit_switch_to_stack(r_stack: Reg) {
 		var scratch = regConfig.scratch;

@@ -1549,8 +1549,7 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 	}
 	// Makes {dest} the running stack and enters it.
 	def emitEnterStack(dest: Reg) {
-		masm.emit_set_stack_state(dest, StackState.RUNNING);
-		masm.emit_set_curstack(dest);
+		masm.emit_activate_stack(dest);
 		emitLeaveStack(fun => masm.emit_enter_stack(dest));
 	}
 	// Loads the module tag {tag_index} of this instance into {r}.
@@ -1574,7 +1573,8 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 		if (n > 0) masm.emit_addw_r_i(vsp, 0 - n * slot_size);
 		masm.emit_pass_values(parent, dst, vsp, n, cont, xmm);
 		masm.emit_mov_m_r(ValueKind.REF, MasmAddr(psfp, frame.vsp_slot.offset), dst);
-		masm.emit_suspend_stack(cur, vsp, prev, sig.results.length);
+		masm.emit_mov_m_i(MasmAddr(cur, offsets.X86_64Stack_params_arity), sig.results.length);
+		masm.emit_suspend_stack(cur, vsp, prev);
 		masm.emit_mov_m_l(MasmAddr(prev, offsets.X86_64Stack_parent), 0);
 		masm.emit_clear_handlers(parent);
 		state.popArgsAndPushResults(sig);
@@ -1582,7 +1582,7 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 	}
 	// Consumes the target continuation, splices its chain under the switch handler and switches to it.
 	def emitInlineSwitch(target_decl: ContDecl, this_decl: ContDecl, tag_index: u31) {
-		var n = target_decl.sig.params.length - 1, slot_size = masm.valuerep.slot_size;
+		var n = target_decl.sig.params.length - 1, slot_size = masm.valuerep.slot_size, offsets = masm.getOffsets();
 		var vsp = allocTmp(ValueKind.REF), cur = allocTmp(ValueKind.REF), target = allocTmp(ValueKind.REF);
 		var prev = allocTmp(ValueKind.REF), parent = allocTmp(ValueKind.REF), tag = allocTmp(ValueKind.REF);
 		var entry = allocTmp(ValueKind.REF), cnt = allocTmp(ValueKind.REF), ptags = allocTmp(ValueKind.REF);
@@ -1595,7 +1595,8 @@ class SinglePassCompiler(xenv: SpcExecEnv, masm: MacroAssembler, regAlloc: RegAl
 		var bottom = entry, dst = tag, tmp = cnt;
 		masm.emit_replace_child_chain(parent, prev, target, bottom, tmp);
 		masm.emit_addw_r_i(vsp, 0 - (n + 1) * slot_size);
-		masm.emit_suspend_stack(cur, vsp, prev, this_decl.sig.params.length);
+		masm.emit_mov_m_i(MasmAddr(cur, offsets.X86_64Stack_params_arity), this_decl.sig.params.length);
+		masm.emit_suspend_stack(cur, vsp, prev);
 		masm.emit_v3_X86_64Stack_vsp_r_r(dst, target);
 		masm.emit_pass_values(target, dst, vsp, n, cont, xmm);
 		state.pop();

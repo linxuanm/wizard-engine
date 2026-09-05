@@ -555,6 +555,7 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 
 		{ // Entry for the interpreter to handle a suspension from a child stack
 			ic.header.intSuspendEntryOffset = w.pos;
+			masm.int_suspend_entry = ic.start + w.pos;
 			// Load runtime %sp and %vsp from the handling stack
 			masm.emit_get_curstack(xenv.scratch);
 			masm.emit_v3_X86_64Stack_vsp_r_r(xenv.vsp, xenv.scratch);
@@ -2559,16 +2560,35 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			genResumeChain(curStack, contStack, false);
 		}
 		bindHandler(Opcode.SUSPEND); {
-			var tag_index = r_tmp0;
+			var tag = xenv.instance, n = xenv.mem0_base, arity = xenv.vfp, cur = xenv.tmp1;
+			var parent = xenv.tmp3, prev = xenv.tmp4, entry = xenv.tmp0, cnt = xenv.func_decl, ptags = xenv.eip;
+			var cont = if(FeatureDisable.unboxedConts, xenv.dispatch, cur);
 			computeCurIpForTrap(-1);
 			computePcFromCurIp();
 			saveCallerIVars();
-			genReadUleb32(tag_index); // read tag index
-			masm.emit_get_curstack(xenv.tmp1);
-			callRuntime(refRuntimeCall(X86_64RT.runtime_handle_suspend), [r_tmp1, r_instance, tag_index], true);
-			// NOTE: at this point, %sp should be one address below the frame as {runtime_handle_suspend}
-			// is the only RT call that modifies {curStack} and pushes a dummy address so that the stored
-			// return address isn't popped off in {callRuntime}
+			if (FeatureDisable.unboxedConts) genAllocContinuation(cont);
+			genReadUleb32(r_tmp0); // read tag index
+			genLoadTag(tag, xenv.tmp0);
+			masm.emit_v3_Tag_sig_r_r(xenv.scratch, tag);
+			masm.emit_v3_SigDecl_params_r_r(n, xenv.scratch);
+			masm.emit_v3_Array_length_r_r(n, n);
+			masm.emit_v3_SigDecl_results_r_r(arity, xenv.scratch);
+			masm.emit_v3_Array_length_r_r(arity, arity);
+			masm.emit_get_curstack(cur);
+			masm.emit_mov_m_r(ValueKind.I32, MasmAddr(cur, offsets.X86_64Stack_params_arity), arity);
+			masm.emit_reserve_return_slot(cur);
+			masm.emit_handler_search(false, tag, cur, parent, prev, entry, cnt, ptags, masm.newTrapLabel(TrapReason.INVALID_SUSPEND));
+			var dst = tag, psfp = cnt, n_copy = ptags;
+			masm.emit_handler_fixup(parent, entry, dst, psfp);
+			genPopValues(n, n_copy, 0);
+			masm.emit_value_copy(G(dst), r_vsp, G(n_copy), r_xmm0);
+			asm.q.add_r_r(G(dst), G(n));
+			masm.emit_pass_cont(parent, dst, 0, cont);
+			masm.emit_mov_m_r(ValueKind.REF, MasmAddr(psfp, X86_64InterpreterFrame.vsp.offset), dst);
+			masm.emit_suspend_stack(cur, xenv.vsp, prev);
+			masm.emit_mov_m_l(MasmAddr(prev, offsets.X86_64Stack_parent), 0);
+			masm.emit_clear_handlers(parent);
+			masm.emit_activate_stack(parent);
 			var stub_suspend = X86_64Label.new();
 			asm.call_rel_far(stub_suspend);
 			/* === PARENT STACK RUNNING === */
@@ -2580,31 +2600,44 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			restoreDispatchTableReg();
 			endHandler();
 
-			asm.bind(stub_suspend); {
-				// Load handler stack %sp and return to its suspension entry stub
-				masm.emit_get_curstack(xenv.scratch);
-				masm.emit_v3_X86_64Stack_rsp_r_r(xenv.sp, xenv.scratch);
-				// Pop off the ret address as we are in fast-int mode and not RT calls anymore
-				masm.emit_pop_X86_64Stack_rsp_r_r(xenv.scratch);
-				// Pop address from parent stack and go to it
-				masm.emit_pop_r(ValueKind.REF, xenv.scratch);
-				masm.emit_jump_r(xenv.scratch);
-			}
+			asm.bind(stub_suspend);
+			masm.emit_enter_stack(parent);
 		}
 		bindHandler(Opcode.SWITCH); {
-			var target_cont_id = r_tmp0, tag_id = r_tmp1;
-			var switchStub = X86_64Label.new();
+			var tag = xenv.instance, n = xenv.mem0_base, arity = xenv.vfp, cur = xenv.tmp1, target = xenv.tmp0;
+			var parent = xenv.tmp3, prev = xenv.tmp4, entry = xenv.func_decl, cnt = xenv.eip, ptags = xenv.vfp;
+			var cont = if(FeatureDisable.unboxedConts, xenv.dispatch, cur);
 			computeCurIpForTrap(-1);
 			computePcFromCurIp();
 			saveCallerIVars();
-			genReadUleb32(target_cont_id); // read cont index
-			genReadUleb32(tag_id); // read tag index
-			masm.emit_get_curstack(xenv.tmp3);
-			callRuntime(refRuntimeCall(X86_64RT.runtime_handle_switch), [r_tmp3, r_instance, target_cont_id, tag_id], true);
+			if (FeatureDisable.unboxedConts) genAllocContinuation(cont);
+			genReadUleb32(r_tmp0); // read cont index
+			genReadUleb32(r_tmp1); // read tag index
+			masm.emit_v3_Instance_heaptypes_r_r(n, xenv.instance);
+			masm.emit_v3_Array_elem_r_rr(ValueKind.REF, n, n, xenv.tmp0);
+			masm.emit_mov_r_m(ValueKind.I32, arity, MasmAddr(n, offsets.ContDecl_switch_arity));
+			masm.emit_v3_ContDecl_sig_r_r(n, n);
+			masm.emit_v3_SigDecl_params_r_r(n, n);
+			masm.emit_v3_Array_length_r_r(n, n);
+			asm.d.sub_r_i(G(n), 1);
+			genLoadTag(tag, xenv.tmp1);
+			masm.emit_get_curstack(cur);
+			masm.emit_mov_m_r(ValueKind.I32, MasmAddr(cur, offsets.X86_64Stack_params_arity), arity);
+			masm.emit_reserve_return_slot(cur);
+			masm.emit_validate_and_consume_cont(target, MasmAddr(xenv.vsp, valuerep.tag_size - valuerep.slot_size));
+			masm.emit_handler_search(true, tag, cur, parent, prev, entry, cnt, ptags, masm.newTrapLabel(TrapReason.INVALID_SUSPEND));
+			var bottom = entry, dst = tag, tmp = cnt, n_copy = cnt;
+			masm.emit_replace_child_chain(parent, prev, target, bottom, tmp);
+			genPopValues(n, n_copy, 1);
+			masm.emit_suspend_stack(cur, xenv.vsp, prev);
+			masm.emit_v3_X86_64Stack_vsp_r_r(dst, target);
+			masm.emit_value_copy(G(dst), r_vsp, G(n_copy), r_xmm0);
+			asm.q.add_r_r(G(dst), G(n));
+			masm.emit_pass_cont(target, dst, 0, cont);
+			masm.emit_activate_stack(target);
+			var switchStub = X86_64Label.new();
 			asm.call_rel_far(switchStub);
-
 			/* === OTHER STACK RUNNING === */
-
 			// skip pass {switch} instruction after begin resumed
 			masm.emit_get_curstack(xenv.scratch);
 			masm.emit_v3_X86_64Stack_vsp_r_r(xenv.vsp, xenv.scratch);
@@ -2614,15 +2647,8 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 			restoreDispatchTableReg();
 			endHandler();
 
-			asm.bind(switchStub); {
-				masm.emit_get_curstack(xenv.scratch);
-				masm.emit_v3_X86_64Stack_rsp_r_r(xenv.sp, xenv.scratch);
-				masm.emit_v3_X86_64Stack_vsp_r_r(xenv.vsp, xenv.scratch);
-				restoreCallerIVars();
-				restoreDispatchTableReg();
-				masm.emit_pop_r(ValueKind.REF, xenv.scratch);
-				masm.emit_jump_r(xenv.scratch);
-			}
+			asm.bind(switchStub);
+			masm.emit_enter_stack(target);
 		}
 		// Handler for generic probes, simply calls the runtime.
 		writeDispatchEntry(dispatchTables[0].1, InternalOpcode.PROBE.code, w.atEnd().pos); {
@@ -4153,6 +4179,27 @@ class X86_64InterpreterGen(ic: X86_64InterpreterCode, w: DataWriter) {
 		asm.movq_r_m(t, r_func_decl.plus(offsets.FuncDecl_handlers));
 		asm.movq_r_m(t, t.plus(offsets.FuncHandlerInfo_resume_sites));
 		masm.emit_v3_Array_elem_r_rr(ValueKind.REF, r_tmp, r_tmp, xenv.curpc);
+	}
+	// Boxed continuations only: allocates the continuation object of the current stack into {cont}.
+	def genAllocContinuation(cont: Reg) {
+		masm.emit_get_curstack(xenv.tmp1);
+		callRuntime(refRuntimeCall(X86_64RT.runtime_alloc_cont), [r_tmp1], false);
+		asm.movq_r_r(G(cont), r_runtime_ret0);
+		restoreCallerIVars();
+		restoreCurPcFromFrame();
+	}
+	// Loads the tag {index} of this instance into {tag}.
+	def genLoadTag(tag: Reg, index: Reg) {
+		masm.emit_v3_Instance_tags_r_r(tag, xenv.instance);
+		masm.emit_v3_Array_elem_r_rr(ValueKind.REF, tag, tag, index);
+	}
+	// Copies the slot count {n} into {n_copy}, turns {n} into bytes and pops those plus {extra} slots.
+	def genPopValues(n: Reg, n_copy: Reg, extra: int) {
+		asm.movq_r_r(G(n_copy), G(n));
+		asm.q.shl_r_i(G(n), valuerep.slot_size_log);
+		asm.q.sub_r_r(r_vsp, G(n));
+		if (extra > 0) asm.q.sub_r_i(r_vsp, extra * valuerep.slot_size);
+		masm.emit_save_ivar(xenv.vsp);
 	}
 	// Parks the current stack, publishes the handler table, chains {contStack} under it and switches.
 	def genResumeChain(curStack: Reg, contStack: Reg, skip_tag: bool) {
